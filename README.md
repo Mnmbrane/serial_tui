@@ -16,7 +16,7 @@ A high-performance terminal UI for serial port communication with scripting supp
 
 ## Directory Structure
 
-```
+```text
 serialtui/
 ├── Cargo.toml
 ├── config/
@@ -91,7 +91,7 @@ serialtui/
 
 ### Data Flow
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              MAIN EVENT LOOP                                │
 │                         (tokio runtime + ratatui)                           │
@@ -234,13 +234,14 @@ serialtui/
          │ push                │ write      ╚════════╤═════════╝
          ▼                     ▼                     │
 ┌──────────────┐       ┌──────────────┐              │
-│ App State:   │       │  Log Files   │              │ sendstr/sendbin
-│ DisplayBuffer│       │              │              │ builtins send
-└──────────────┘       │  logs/       │              │ SerialCommand
-                       │  ├─ all.log  │              │
-                       │  ├─ GPS.log  │              ▼
-                       │  └─ Motor.log│      ┌───────────────┐
-                       └──────────────┘      │mpsc::Sender   │
+│ App State:   │       │  Log Files   │              │
+│ DisplayBuffer│       │              │              │ sendstr/sendbin
+└──────────────┘       │  logs/       │              │ builtins send
+                       │  ├─ all.log  │              │ SerialCommand
+                       │  ├─ GPS.log  │              │
+                       │  └─ Motor.log│              ▼
+                       └──────────────┘      ┌───────────────┐
+                                             │mpsc::Sender   │
                                              │<SerialCommand>│
                                              │               │
                                              │ (loops back   │
@@ -319,6 +320,24 @@ pub struct Notification {
 
 // Command Dispatcher -> Script Engine (for abort signal)
 script_abort_tx: tokio::sync::oneshot::Sender<()>
+
+// Reconnection state (per port, in Serial Handler)
+pub struct ReconnectState {
+    pub current_delay: Duration,
+}
+
+impl ReconnectState {
+    const MIN_DELAY: Duration = Duration::from_secs(1);
+    const MAX_DELAY: Duration = Duration::from_secs(8);
+    const MULTIPLIER: f64 = 2.0;
+
+    // Returns delay, then increases for next call
+    // Pattern: 1s -> 2s -> 4s -> 8s -> 8s -> 8s -> ...
+    fn next_delay(&mut self) -> Duration;
+
+    // Reset to 1s on successful connection
+    fn reset(&mut self);
+}
 ```
 
 ---
@@ -500,7 +519,7 @@ while counter < 10 {
 
 ## UI Layout
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ [Port ▼] [Filter ▼] [Add Port] [Run Script ▼]              NOTIFICATIONS →  │
 │  GPS                  Hide:                    scripts/                     │
@@ -617,7 +636,7 @@ tracing-subscriber = "0.3"
 
 ## Log Format
 
-```
+```text
 <2025-12-07 14:32:01.123>[GPS] NMEA: $GPGGA,123456.00,4807.038,N,01131.000,E,1,08,0.9,545.4,M,47.0,M,,*47
 <2025-12-07 14:32:01.456>[Motor] RPM: 1500, Temp: 45C
 ```
