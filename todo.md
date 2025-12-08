@@ -10,27 +10,29 @@
 
 ### Config Module
 
-- [ ] Define `PortConfig` struct with serde
-- [ ] Define `AppConfig` struct (defaults + ports)
-- [ ] Define `MacroConfig` struct
-- [ ] Config file parser (load config.toml)
-- [ ] Config validation (unique names, unique paths)
+- [ ] Define `PortConfig` struct with serde (name, path, baud_rate, data_bits, stop_bits, parity, flow_control, line_ending, color)
+- [ ] Define `DefaultsConfig` struct (default values for port settings)
+- [ ] Define `MacroConfig` struct (name, key, command)
+- [ ] Config file parser (load config/config.toml)
+- [ ] Config validation (unique names, unique paths, notify on error don't crash)
 - [ ] Config save functionality
-- [ ] Default value generation (random unique colors)
-- [ ] Macro file parser (load macros.toml)
+- [ ] Default value generation (random unique colors - no duplicates)
+- [ ] Macro file parser (load config/macros.toml)
 
 ### Serial Module
 
-- [ ] Define `SerialMessage` struct
-- [ ] Define `SerialCommand` enum
+- [ ] Define `SerialMessage` struct (timestamp, port_name, port_path, data)
+- [ ] Define `SerialCommand` enum (Send, Connect, Disconnect)
 - [ ] Port connection logic (tokio-serial)
-- [ ] Line buffering (configurable line ending)
+- [ ] Line buffering (configurable line ending: "\n" or "\r\n")
 - [ ] Single port read task (async)
 - [ ] Single port write handling
-- [ ] Broadcast channel setup (fan-out)
-- [ ] Auto-reconnect logic with backoff
+- [ ] Broadcast channel setup (fan-out to Display Buffer Updater, Logger, Script waitstr)
+- [ ] mpsc receiver for SerialCommand
+- [ ] Auto-reconnect logic with polling interval
 - [ ] Port manager (spawn/despawn port tasks)
-- [ ] Binary data handling
+- [ ] Binary data handling for sendbin
+- [ ] Connection restored notification
 
 ### Logger Module
 
@@ -40,13 +42,21 @@
 - [ ] Async file writing (non-blocking)
 - [ ] Log directory creation
 
+### App Integration
+
+- [ ] Define `AppState` struct (port_configs, port_states, display_buffer, notifications, script state, debug_mode, vim_mode, focus)
+- [ ] Define `AppCommand` enum (Quit, RunScript, StopScript, ToggleDebug, SendText, Connect, Disconnect, SaveConfig, ClearDisplay)
+- [ ] Channel wiring (app_command_tx, serial_command_tx, serial_broadcast, notification_tx)
+- [ ] Command Dispatcher task (routes AppCommand to appropriate handlers)
+- [ ] Graceful shutdown
+
 ### UI - Core
 
 - [ ] Basic ratatui app loop
-- [ ] Main layout (top/middle/bottom split)
-- [ ] App mode state machine (Normal, Debug, Command)
-- [ ] Focus management (display vs input box)
-- [ ] Keyboard event routing
+- [ ] Main layout (top config bar / middle display+preview / bottom input+port selector)
+- [ ] Focus management (Display vs InputBox)
+- [ ] VimMode state machine (Normal, Insert, Command, Search)
+- [ ] Keyboard event routing based on focus and mode
 
 ### UI - Config Bar (Top)
 
@@ -99,12 +109,15 @@
 ### UI - Input Box (Bottom)
 
 - [ ] Text input widget
-- [ ] Insert mode
-- [ ] Normal mode (vim commands)
-- [ ] Cursor movement
-- [ ] Basic editing (backspace, delete)
+- [ ] Insert mode (typing text)
+- [ ] Normal mode (vim movement commands)
+- [ ] Cursor movement (h/l/w/b/0/$)
+- [ ] Basic editing (backspace, delete, x, dd)
 - [ ] Command history
-- [ ] `Ctrl+R` reverse search (display buffer)
+- [ ] `Ctrl+R` reverse search (display buffer, using grep-regex)
+- [ ] Enter sends text to selected ports via AppCommand::SendText
+- [ ] `:` command parsing (`:q`, `:w`, `:run`, `:stop`, `:debug`, `:clear`, `:connect`, `:disconnect`)
+- [ ] `:memory` and `:thread` send debug info to notification
 
 ### UI - Port Selector (Bottom Left)
 
@@ -123,21 +136,21 @@
 
 ### UI - Notifications
 
-- [ ] Notification struct (message, type, duration)
-- [ ] Duration calculation (char count + 1s)
-- [ ] Notification queue (stacking)
+- [ ] Notification struct (message, level, created_at)
+- [ ] Duration calculation (char_count / avg_reading_speed + 1 second)
+- [ ] Notification queue (stacking, VecDeque in AppState)
 - [ ] Top-right rendering
-- [ ] Auto-dismiss timer
-- [ ] Notification types (info, error, success)
+- [ ] Auto-dismiss timer based on duration
+- [ ] Notification levels (Info, Warning, Error)
+- [ ] Notification System task (mpsc receiver, pushes to AppState)
 
 ### UI - Debug Screen
 
-- [ ] Debug screen overlay
-- [ ] `:debug` toggle command
-- [ ] Debug log buffer (eprint capture)
-- [ ] `:memory` command output
-- [ ] `:thread` command output
+- [ ] Debug screen overlay (toggled via `:debug`)
+- [ ] Debug log buffer (VecDeque in AppState)
+- [ ] Capture debug prints to buffer
 - [ ] Scroll within debug screen
+- [ ] Vim navigation in debug screen
 
 ### Script Engine - Lexer
 
@@ -176,32 +189,37 @@
 ### Script Engine - Interpreter
 
 - [ ] Environment/scope management
-- [ ] Variable storage
+- [ ] Variable storage (f64, String, bool, Array)
 - [ ] Expression evaluation
-- [ ] Number operations
-- [ ] String operations
-- [ ] Boolean operations
-- [ ] Array operations
+- [ ] Number operations (+, -, *, /, %)
+- [ ] String operations (concatenation)
+- [ ] Boolean operations (&&, ||, !)
+- [ ] Comparison operations (==, !=, <, >, <=, >=)
+- [ ] Array operations (indexing, iteration)
 - [ ] Control flow (if/elif/else)
-- [ ] Loop execution (while, for)
+- [ ] Loop execution (while, for with range 0..n)
 - [ ] Function calls (user-defined)
 - [ ] Function return values
-- [ ] Built-in: `sendstr(ports, string)`
-- [ ] Built-in: `sendbin(ports, hex)`
-- [ ] Built-in: `wait(seconds)`
-- [ ] Built-in: `waitstr(ports, regex, timeout)`
+- [ ] Built-in: `sendstr(ports, string)` - sends SerialCommand
+- [ ] Built-in: `sendbin(ports, hex)` - parses "0x..." and sends SerialCommand
+- [ ] Built-in: `wait(seconds)` - async sleep
+- [ ] Built-in: `waitstr(ports, regex, timeout)` - subscribes to broadcast, regex match
 - [ ] Script abort on waitstr timeout
-- [ ] Async execution (non-blocking wait)
-- [ ] Error handling and reporting
+- [ ] Script abort via oneshot channel from Command Dispatcher
+- [ ] Async execution (non-blocking wait/waitstr)
+- [ ] Error handling and reporting (send notification on error)
 
-### App Integration
+### Macro System
 
-- [ ] App state struct
-- [ ] Channel wiring (serial <-> ui <-> script)
-- [ ] Command parsing (`:q`, `:w`, `:run`, etc.)
-- [ ] Script execution management
-- [ ] Macro execution
-- [ ] Graceful shutdown
+- [ ] Macro execution from key binding (F1, F2, etc.)
+- [ ] Parse macro command string
+- [ ] Execute as script snippet
+
+### Display Buffer Updater
+
+- [ ] Async task subscribes to serial_broadcast
+- [ ] Push SerialMessage to AppState.display_buffer
+- [ ] Lock/unlock AppState mutex
 
 ### Polish
 
@@ -229,59 +247,71 @@
 
 ## Milestones
 
-### M1: Basic Serial Connection
+### M1: Foundation + Basic Serial
 
-- Project setup
-- Config module (load only)
-- Serial module (single port read)
-- Logger module (combined log)
-- Basic main loop
+- Project setup (Cargo.toml, directory structure)
+- Config module (load config.toml, PortConfig struct)
+- Serial module (single port read task, SerialMessage)
+- Logger module (combined all.log)
+- Basic tokio main loop
 
-### M2: Minimal TUI
+### M2: Minimal TUI + Channel Wiring
 
+- AppState struct
+- Channel setup (serial_broadcast, app_command_tx, serial_command_tx, notification_tx)
 - Basic ratatui loop
-- Display buffer rendering
-- Input box (basic)
-- Send to single port
+- Display buffer rendering (read from AppState)
+- Display Buffer Updater task
+- Input box (basic text input)
+- Send text to single port (AppCommand::SendText -> SerialCommand::Send)
 
-### M3: Multi-Port Support
+### M3: Multi-Port + Notifications
 
 - Multiple port tasks
-- Broadcast channel
-- Port selector checkboxes
-- Interleaved display with colors
+- Port selector checkboxes (bottom-left)
+- Interleaved display with port name coloring
 - Per-port logging
+- Notification System task
+- Basic notifications (connected, disconnected)
 
-### M4: Vim Navigation
+### M4: Vim Navigation + Preview
 
-- Display navigation (j/k/gg/G)
-- Search (/)
-- Yank (y/yy)
-- Preview panel
+- Vim mode state machine (Normal, Insert)
+- Display navigation (j/k/gg/G/Ctrl-d/Ctrl-u)
+- Line selection/cursor
+- Preview panel (3 lines, wrapping)
+- Search (/, n, N, highlight all)
+- Yank (y, yy to clipboard)
 
-### M5: Config UI
+### M5: Config UI + Commands
 
-- Config bar dropdowns
+- Config bar (top)
+- Port dropdown
+- Filter dropdown (hide ports)
 - Add port popup
 - Color picker popup
-- Filter dropdown
-- Save config
+- Save config (:w)
+- Commands (:q, :debug, :clear, :connect, :disconnect)
 
 ### M6: Script Engine
 
-- Lexer
-- Parser
-- Interpreter (basic)
-- Built-in functions
-- Script execution from UI
+- Lexer (tokens, literals, operators)
+- Parser (AST, expressions, statements, functions)
+- Interpreter (variables, control flow, loops, functions)
+- Built-ins (sendstr, sendbin, wait, waitstr)
+- Script execution from UI (:run, :stop)
+- Script notifications (started, finished, aborted)
 
-### M7: Polish
+### M7: Polish + Advanced Features
 
-- Notifications
-- Debug screen
-- Auto-reconnect
-- Error handling
-- Commands (:q, :w, :debug, etc.)
+- Auto-reconnect with notification
+- Debug screen (:debug toggle)
+- :memory and :thread notifications
+- Macro system (F1, F2, etc.)
+- Ctrl+R reverse search in input box
+- Config error handling (notify, don't crash)
+- Edge case handling
+- Performance optimization
 
 ---
 
@@ -289,25 +319,41 @@
 
 ### Priority Order
 
-1. Foundation + Config + Serial (get data flowing)
-2. Basic UI (see the data)
-3. Vim navigation (interact with data)
-4. Multi-port (scale up)
-5. Script engine (automation)
-6. Polish (production ready)
+1. M1: Foundation + Basic Serial (get data flowing to logs)
+2. M2: Minimal TUI + Channel Wiring (see data, send data)
+3. M3: Multi-Port + Notifications (scale to 255 ports)
+4. M4: Vim Navigation + Preview (navigate and interact)
+5. M5: Config UI + Commands (configure without editing files)
+6. M6: Script Engine (automation)
+7. M7: Polish + Advanced Features (production ready)
 
 ### Dependencies
 
 ```
-Config ─────────────────────────┐
-                                ▼
-Serial ──────────────────────► App Integration
-                                ▲
-Logger ─────────────────────────┤
-                                │
-UI (all components) ────────────┤
-                                │
-Script Engine ──────────────────┘
+                    ┌─────────────────────────────────────┐
+                    │         App Integration             │
+                    │  (AppState, Channels, Dispatcher)   │
+                    └─────────────────────────────────────┘
+                                    ▲
+          ┌─────────────────────────┼─────────────────────────┐
+          │                         │                         │
+    ┌─────┴─────┐             ┌─────┴─────┐             ┌─────┴─────┐
+    │  Config   │             │  Serial   │             │  Logger   │
+    │  Module   │             │  Module   │             │  Module   │
+    └───────────┘             └───────────┘             └───────────┘
+                                    │
+                    broadcast::Sender<SerialMessage>
+                                    │
+          ┌─────────────────────────┼─────────────────────────┐
+          │                         │                         │
+    ┌─────┴─────┐             ┌─────┴─────┐             ┌─────┴─────┐
+    │ Display   │             │  Logger   │             │  Script   │
+    │ Buffer    │             │ (writes)  │             │  Engine   │
+    │ Updater   │             │           │             │ (waitstr) │
+    └───────────┘             └───────────┘             └───────────┘
+          │                                                   │
+          └───────────────► UI Task ◄─────────────────────────┘
+                         (reads AppState)
 ```
 
 ### Complexity Estimates
@@ -317,11 +363,13 @@ Script Engine ──────────────────┘
 | Config | Low | Serde does heavy lifting |
 | Serial | Medium | Async + reconnect logic |
 | Logger | Low | Straightforward file I/O |
+| App Integration | Medium | Channel wiring, Command Dispatcher |
 | UI Core | Medium | Layout + state management |
 | Vim Nav | Medium | Multiple modes + state |
 | Vim Search | Medium | Regex + highlighting |
 | Popups | Medium | Overlay system |
 | Notifications | Low | Timer + queue |
+| Display Buffer Updater | Low | Simple broadcast subscriber |
 | Lexer | Medium | Token state machine |
 | Parser | High | Recursive descent + precedence |
-| Interpreter | High | Scope + async builtins |
+| Interpreter | High | Scope + async builtins + waitstr |

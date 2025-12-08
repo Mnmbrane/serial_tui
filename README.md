@@ -95,54 +95,185 @@ serialtui/
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              MAIN EVENT LOOP                                │
 │                         (tokio runtime + ratatui)                           │
+│                              spawns all tasks                               │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-          ┌───────────────────────────┼───────────────────────────┐
-          ▼                           ▼                           ▼
-   ┌─────────────┐            ┌──────────────┐           ┌────────────────┐
-   │   UI Task   │◄──────────►│  App State   │◄─────────►│ Script Engine  │
-   │  (ratatui)  │            │  (Arc<...>)  │           │    (async)     │
-   └─────────────┘            └──────────────┘           └────────────────┘
-          │                           ▲                           │
-          │ crossterm                 │                           │
-          │ events                    │                           │
-          ▼                           │                           ▼
-   ┌─────────────┐                    │                  ┌────────────────┐
-   │   Input     │────────────────────┘                  │   Builtins     │
-   │  Handler    │                                       │ sendstr/wait/  │
-   └─────────────┘                                       │   waitstr      │
-                                                         └────────────────┘
-                                                                  │
-                                                                  ▼
+
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            SERIAL HANDLER                                   │
-│                    (tokio tasks, one per port)                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐       ┌─────────┐                   │
-│  │  COM1   │  │  COM2   │  │  COM3   │  ...  │ COM255  │                   │
-│  │  task   │  │  task   │  │  task   │       │  task   │                   │
-│  └────┬────┘  └────┬────┘  └────┬────┘       └────┬────┘                   │
-│       │            │            │                  │                        │
-│       └────────────┴────────────┴──────────────────┘                        │
-│                              │                                              │
-│                    tokio::sync::broadcast                                   │
-│                      (fan-out to all)                                       │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-            ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-            │   Display    │  │    Logger    │  │   Script     │
-            │   Buffer     │  │   (async)    │  │   waitstr    │
-            │              │  │              │  │   listener   │
-            └──────────────┘  └──────────────┘  └──────────────┘
-                                      │
-                                      ▼
-                              ┌──────────────┐
-                              │  Log Files   │
-                              │  all.log     │
-                              │  <port>.log  │
-                              └──────────────┘
+│                               APP STATE                                     │
+│                            (Arc<Mutex<...>>)                                │
+│                                                                             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
+│  │PortConfigs  │ │DisplayBuffer│ │Notifications│ │ ScriptState │            │
+│  │HashMap<name,│ │VecDeque<    │ │VecDeque<    │ │running flag,│            │
+│  │PortConfig>  │ │SerialMsg>   │ │Notification>│ │abort handle │            │
+│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘            │
+│         │               │               │               │                   │
+└─────────┼───────────────┼───────────────┼───────────────┼───────────────────┘
+          │               │               │               │
+          │read           │read/push      │read/push      │read/write
+          │               │               │               │
+          │ UI Task       │ UI Task       │ UI Task       │ Script Engine
+          │ Cmd Dispatcher│ Disp.Buf.Upd. │ Notif.System  │ Cmd Dispatcher
+          ▼               ▼               ▼               ▼
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                UI TASK                                        ║
+║                               (ratatui)                                       ║
+║                                                                               ║
+║  READS FROM APP STATE:                                                        ║
+║  - PortConfigs (to render config bar, port selector)                          ║
+║  - DisplayBuffer (to render serial output)                                    ║
+║  - Notifications (to render notification stack)                               ║
+║  - ScriptState (to show "script running" indicator)                           ║
+║                                                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────┐     ║
+║  │                         RENDER LOOP                                  │     ║
+║  │  1. Lock App State                                                   │     ║
+║  │  2. Render config bar, display, preview, input box, notifications    │     ║
+║  │  3. Unlock App State                                                 │     ║
+║  │  4. Poll crossterm events                                            │     ║
+║  └──────────────────────────────────────────────────────────────────────┘     ║
+║                               │                                               ║
+║                               │ crossterm::event::read()                      ║
+║                               ▼                                               ║
+║  ┌──────────────────────────────────────────────────────────────────────┐     ║
+║  │                       INPUT HANDLER                                  │     ║
+║  │                                                                      │     ║
+║  │  Keyboard input is parsed into:                                      │     ║
+║  │  - Vim navigation commands (j/k/gg/G/etc) -> handled locally         │     ║
+║  │  - : commands (:q, :run, :debug) -> sent to Command Dispatcher       │     ║
+║  │  - User text + Enter -> sent to Command Dispatcher                   │     ║
+║  └───────────────────────────────┬──────────────────────────────────────┘     ║
+╚══════════════════════════════════╪════════════════════════════════════════════╝
+                                   │
+                                   │ mpsc: AppCommand
+                                   │ (Quit, RunScript, Debug, SendText, etc)
+                                   ▼
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          COMMAND DISPATCHER                                  ║
+║                            (async task)                                      ║
+║                                                                              ║
+║  Receives AppCommand and routes:                                             ║
+║                                                                              ║
+║  AppCommand::Quit           -> signals shutdown                              ║
+║  AppCommand::RunScript(p)   -> spawns Script Engine task                     ║
+║  AppCommand::StopScript     -> sends abort signal to Script Engine           ║
+║  AppCommand::ToggleDebug    -> toggles debug_mode in App State               ║
+║  AppCommand::SendText{..}   -> sends SerialCommand::Send to Serial Handler   ║
+║  AppCommand::Connect{..}    -> sends SerialCommand::Connect                  ║
+║  AppCommand::Disconnect{..} -> sends SerialCommand::Disconnect               ║
+║  AppCommand::SaveConfig     -> saves config to file                          ║
+║  AppCommand::ClearDisplay   -> clears display_buffer in App State            ║
+╚═════════════════════════════════════════════════════════════════════════════╝
+                              │
+                              │ mpsc: SerialCommand
+                              │ (Send, Connect, Disconnect)
+                              │
+        ┌─────────────────────┴─────────────────────┐
+        │                                           │
+        │ (from Command Dispatcher                  │ (from Script Engine
+        │  when user types text)                    │  builtins: sendstr/sendbin)
+        │                                           │
+        ▼                                           │
+╔═══════════════════════════════════════════════════╪═══════════════════════════╗
+║                            SERIAL HANDLER         │                           ║
+║                    (tokio tasks, one per port)    │                           ║
+║                                                   │                           ║
+║  ┌──────────────────────────────────────────┐     │                           ║
+║  │ mpsc::Receiver<SerialCommand>            │◄────┘                           ║
+║  │                                          │                                 ║
+║  │ SerialCommand::Send { ports, data }      │                                 ║
+║  │   -> routes data to specified port tasks │                                 ║
+║  │ SerialCommand::Connect { port }          │                                 ║
+║  │   -> spawns new port task                │                                 ║
+║  │ SerialCommand::Disconnect { port }       │                                 ║
+║  │   -> kills port task                     │                                 ║
+║  └──────────────────────────────────────────┘                                 ║
+║                                                                               ║
+║  ┌─────────┐  ┌─────────┐  ┌─────────┐            ┌─────────┐                 ║
+║  │  COM1   │  │  COM2   │  │  COM3   │    ...     │ COM255  │                 ║
+║  │  task   │  │  task   │  │  task   │            │  task   │                 ║
+║  │         │  │         │  │         │            │         │                 ║
+║  │ ┌─────┐ │  │ ┌─────┐ │  │ ┌─────┐ │            │ ┌─────┐ │                 ║
+║  │ │read │ │  │ │read │ │  │ │read │ │            │ │read │ │                 ║
+║  │ │  ↓  │ │  │ │  ↓  │ │  │ │  ↓  │ │            │ │  ↓  │ │                 ║
+║  │ │write│ │  │ │write│ │  │ │write│ │            │ │write│ │                 ║
+║  │ └─────┘ │  │ └─────┘ │  │ └─────┘ │            │ └─────┘ │                 ║
+║  └────┬────┘  └────┬────┘  └────┬────┘            └────┬────┘                 ║
+║       │            │            │                      │                      ║
+║       │ Each port task reads lines, creates SerialMessage:                    ║
+║       │ SerialMessage { timestamp, port_name, port_path, data }               ║
+║       └────────────┴────────────┴──────────────────────┘                      ║
+║                              │                                                ║
+║                    broadcast::Sender<SerialMessage>                           ║
+║                      (fan-out to all subscribers)                             ║
+╚══════════════════════════════╤════════════════════════════════════════════════╝
+                               │
+                               │ broadcast::Receiver<SerialMessage>
+                               │ (each subscriber clones receiver, gets all msgs)
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        │                      │                      │
+        ▼                      ▼                      ▼
+╔══════════════════╗  ╔══════════════════╗  ╔══════════════════╗
+║ DISPLAY BUFFER   ║  ║     LOGGER       ║  ║  SCRIPT ENGINE   ║
+║    UPDATER       ║  ║    (async)       ║  ║    (async)       ║
+║                  ║  ║                  ║  ║                  ║
+║ Receives:        ║  ║ Receives:        ║  ║ waitstr builtin: ║
+║ SerialMessage    ║  ║ SerialMessage    ║  ║ subscribes to    ║
+║                  ║  ║                  ║  ║ broadcast, waits ║
+║ Action:          ║  ║ Action:          ║  ║ for regex match  ║
+║ Push to App      ║  ║ Format as:       ║  ║ on specified     ║
+║ State's          ║  ║ <ts>[port] data  ║  ║ ports with       ║
+║ DisplayBuffer    ║  ║                  ║  ║ timeout          ║
+║                  ║  ║ Write to:        ║  ║                  ║
+╚════════╤═════════╝  ║ - logs/all.log   ║  ║ On match:        ║
+         │            ║ - logs/<port>.log║  ║ -> continue      ║
+         │            ╚════════╤═════════╝  ║ On timeout:      ║
+         │                     │            ║ -> abort script  ║
+         │ push                │ write      ╚════════╤═════════╝
+         ▼                     ▼                     │
+┌──────────────┐       ┌──────────────┐              │
+│ App State:   │       │  Log Files   │              │ sendstr/sendbin
+│ DisplayBuffer│       │              │              │ builtins send
+└──────────────┘       │  logs/       │              │ SerialCommand
+                       │  ├─ all.log  │              │
+                       │  ├─ GPS.log  │              ▼
+                       │  └─ Motor.log│      ┌───────────────┐
+                       └──────────────┘      │mpsc::Sender   │
+                                             │<SerialCommand>│
+                                             │               │
+                                             │ (loops back   │
+                                             │  to Serial    │
+                                             │  Handler)     │
+                                             └───────────────┘
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                          NOTIFICATION SYSTEM                                  ║
+║                            (async task)                                       ║
+║                                                                               ║
+║  ┌─────────────────────────────────────────────────────────────────────────┐  ║
+║  │ mpsc::Receiver<Notification>                                            │  ║
+║  │                                                                         │  ║
+║  │ Any component can send notifications:                                   │  ║
+║  │ - Serial Handler: "Connected to GPS", "Disconnected from Motor"         │  ║
+║  │ - Script Engine: "Script started", "Script finished", "Script aborted"  │  ║
+║  │ - Config Manager: "Config error at line 5"                              │  ║
+║  │ - Command Dispatcher: "Unknown command: :foo"                           │  ║
+║  └─────────────────────────────────────────────────────────────────────────┘  ║
+║                                      │                                        ║
+║                                      │ push                                   ║
+║                                      ▼                                        ║
+║  ┌─────────────────────────────────────────────────────────────────────────┐  ║
+║  │ App State: Notifications (VecDeque<Notification>)                       │  ║
+║  │                                                                         │  ║
+║  │ UI Task reads this to render notification stack at top-right            │  ║
+║  │ Each notification has:                                                  │  ║
+║  │ - message: String                                                       │  ║
+║  │ - duration: calculated from char_count / reading_speed + 1 sec          │  ║
+║  │ - created_at: Instant (for auto-dismiss)                                │  ║
+║  └─────────────────────────────────────────────────────────────────────────┘  ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ### Channel Architecture
@@ -150,11 +281,23 @@ serialtui/
 ```rust
 // Channels for communication between components
 
-// Serial read -> broadcast to all subscribers
-serial_broadcast: tokio::sync::broadcast::Sender<SerialMessage>
+// Input Handler -> Command Dispatcher
+app_command_tx: tokio::sync::mpsc::Sender<AppCommand>
 
-// UI/Script -> Serial write
-serial_tx: tokio::sync::mpsc::Sender<SerialCommand>
+pub enum AppCommand {
+    Quit,
+    RunScript { path: PathBuf },
+    StopScript,
+    ToggleDebug,
+    SendText { ports: Vec<String>, text: String },
+    Connect { port_name: String },
+    Disconnect { port_name: String },
+    SaveConfig,
+    ClearDisplay,
+}
+
+// Command Dispatcher / Script Engine -> Serial Handler
+serial_command_tx: tokio::sync::mpsc::Sender<SerialCommand>
 
 pub enum SerialCommand {
     Send { port_names: Vec<String>, data: Vec<u8> },
@@ -162,16 +305,20 @@ pub enum SerialCommand {
     Disconnect { port_name: String },
 }
 
-// Notifications
+// Serial Handler -> all subscribers (Display Buffer Updater, Logger, Script Engine waitstr)
+serial_broadcast: tokio::sync::broadcast::Sender<SerialMessage>
+
+// Any component -> Notification System
 notification_tx: tokio::sync::mpsc::Sender<Notification>
 
-// Script control
-script_tx: tokio::sync::mpsc::Sender<ScriptCommand>
-
-pub enum ScriptCommand {
-    Run { path: PathBuf },
-    Abort,
+pub struct Notification {
+    pub message: String,
+    pub level: NotificationLevel,  // Info, Warning, Error
+    pub created_at: Instant,
 }
+
+// Command Dispatcher -> Script Engine (for abort signal)
+script_abort_tx: tokio::sync::oneshot::Sender<()>
 ```
 
 ---
@@ -210,13 +357,16 @@ pub struct PortConfig {
 
 // src/app.rs
 pub struct AppState {
-    pub ports: HashMap<String, PortState>,      // Keyed by port name
+    pub port_configs: HashMap<String, PortConfig>,  // Keyed by port name
+    pub port_states: HashMap<String, PortState>,    // Runtime state (connected, etc)
     pub display_buffer: VecDeque<SerialMessage>,
     pub notifications: VecDeque<Notification>,
-    pub config: AppConfig,
-    pub script_running: Option<ScriptHandle>,
+    pub script_running: bool,
+    pub script_abort_handle: Option<oneshot::Sender<()>>,
+    pub debug_mode: bool,
     pub debug_logs: VecDeque<String>,
-    pub mode: AppMode,                          // Normal, Debug, Command
+    pub vim_mode: VimMode,                          // Normal, Insert, Command, Search
+    pub focus: Focus,                               // Display, InputBox
 }
 
 // src/script/ast.rs
@@ -358,24 +508,24 @@ while counter < 10 {
 │  Debug                ☑ Debug                  └─ setup.stui                │
 │  + Add Port                                                                 │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│ [2025-12-07 14:32:01.123] <GPS> NMEA: $GPGGA,123456.00,4807.038,N...        │
-│ [2025-12-07 14:32:01.456] <Motor> RPM: 1500, Temp: 45C                      │
-│ [2025-12-07 14:32:01.789] <GPS> NMEA: $GPRMC,123456.00,A,4807.038...        │
-│ [2025-12-07 14:32:02.012] <Motor> RPM: 1520, Temp: 46C                      │
+│ <2025-12-07 14:32:01.123>[GPS] NMEA: $GPGGA,123456.00,4807.038,N...         │
+│ <2025-12-07 14:32:01.456>[Motor] RPM: 1500, Temp: 45C                       │
+│ <2025-12-07 14:32:01.789>[GPS] NMEA: $GPRMC,123456.00,A,4807.038...         │
+│ <2025-12-07 14:32:02.012>[Motor] RPM: 1520, Temp: 46C                       │
 │                                                                             │
 │ ~ (vim navigation: j/k/gg/G/Ctrl-d/Ctrl-u, /search, y/yy)                  │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ PREVIEW (selected line, wrapped):                                           │
-│ [2025-12-07 14:32:01.123] <GPS> NMEA: $GPGGA,123456.00,4807.038,N,01131.000 │
-│ ,E,1,08,0.9,545.4,M,47.0,M,,*47                                             │
+│ <2025-12-07 14:32:01.123>[GPS] NMEA: $GPGGA,123456.00,4807.038,N,01131.000, │
+│ E,1,08,0.9,545.4,M,47.0,M,,*47                                              │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ ┌──────────┐                                                                │
-│ │ ☑ GPS    │  :sendstr GPS "PING"                                          │
+│ │ ☑ GPS    │  PING█                                                        │
 │ │ ☐ Motor  │  ───────────────────────────────────────────────────────────  │
 │ │ ☑ Debug  │  (vim input: i=insert, Esc=normal, Ctrl+R=backsearch)         │
-│ └──────────┘                                                                │
+│ └──────────┘  Press Enter to send to selected ports                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -473,5 +623,6 @@ tracing-subscriber = "0.3"
 ```
 
 Logs are written to:
+
 - `logs/all.log` - Combined log from all ports
 - `logs/<port_name>.log` - Individual per-port logs
