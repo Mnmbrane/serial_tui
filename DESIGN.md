@@ -1,18 +1,38 @@
 # SerialTUI Implementation Guide
 
-A step-by-step guide to building SerialTUI from scratch.
+A step-by-step guide to building SerialTUI from scratch, with explanations for every design decision.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Phase 1: Project Foundation](#phase-1-project-foundation)
+3. [Phase 2: Config Module](#phase-2-config-module)
+4. [Phase 3: Serial Module](#phase-3-serial-module-single-port)
+5. [Phase 4: Basic TUI](#phase-4-basic-tui)
+6. [Phase 5: Channel Wiring](#phase-5-channel-wiring)
+7. [Phase 6: Multi-Port Support](#phase-6-multi-port-support)
+8. [Phase 7: Vim Navigation](#phase-7-vim-navigation)
+9. [Phase 8: Notifications](#phase-8-notifications)
+10. [Phase 9: Logger Module](#phase-9-logger-module)
+11. [Phase 10: Script Engine](#phase-10-script-engine)
 
 ---
 
 ## Overview
 
-SerialTUI is a terminal UI for serial port communication with:
-- Multi-port support (up to 255 ports)
-- Vim-style navigation
-- Custom scripting language
-- Async architecture with tokio
+### What We're Building
 
-**Architecture Summary:**
+SerialTUI is a terminal UI for serial port communication. Think of it as a powerful replacement for tools like `minicom`, `screen`, or PuTTY's serial console, but with:
+
+- Multiple ports at once (up to 255)
+- Vim-style keyboard navigation
+- Scriptable automation
+- Modern async architecture
+
+### Why This Architecture?
+
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌───────────────┐
 │   UI Task   │────▶│ Command          │────▶│ Serial        │
@@ -25,15 +45,32 @@ SerialTUI is a terminal UI for serial port communication with:
                     (serial messages)
 ```
 
+**Why separate tasks connected by channels?**
+
+1. **Responsiveness**: The UI never blocks waiting for serial data. If a port is slow or disconnected, the UI stays snappy.
+
+2. **Scalability**: Each serial port runs in its own task. Adding more ports doesn't slow down existing ones.
+
+3. **Testability**: Components can be tested in isolation. You can test the UI without real serial ports.
+
+4. **Crash isolation**: If one port task panics, others keep running.
+
+**Why broadcast channel for serial data?**
+
+Multiple consumers need the same data:
+- Display buffer (show on screen)
+- Logger (write to files)
+- Script engine (waitstr matching)
+
+A broadcast channel lets all of them receive every message without coordination.
+
 ---
 
 ## Phase 1: Project Foundation
 
-**Goal:** Compile, run, handle errors properly.
+**Goal:** Get a compiling project with proper error handling infrastructure.
 
 ### Step 1.1: Dependencies
-
-Add to `Cargo.toml`:
 
 ```toml
 [package]
@@ -77,45 +114,115 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 ```
 
-### Step 1.2: Directory Structure
+#### Why These Specific Crates?
 
-Create this structure:
+| Crate | Why This One? | Alternatives Considered |
+|-------|---------------|------------------------|
+| **tokio** | Industry standard async runtime. "full" features gives us everything (timers, fs, sync primitives). Most other async crates are built for tokio. | async-std (less ecosystem support), smol (smaller but less mature) |
+| **ratatui** | Active fork of tui-rs with better maintenance. Large widget library, good docs. | tui-rs (abandoned), cursive (different paradigm), termion (lower level) |
+| **crossterm** | Cross-platform terminal manipulation. Works on Windows, Linux, macOS. | termion (Linux only), ncurses (C dependency) |
+| **tokio-serial** | Async serial port that integrates with tokio. Uses tokio's `AsyncRead`/`AsyncWrite`. | serialport (sync only, would need spawn_blocking) |
+| **serde + toml** | TOML is human-readable and git-friendly. Serde makes parsing trivial with derive macros. | JSON (harder to edit by hand), YAML (indentation issues), RON (less familiar) |
+| **chrono** | Full-featured datetime library. Needed for timestamps with millisecond precision. | time (less features), std::time (no formatting) |
+| **color-eyre** | Beautiful error reports with backtraces. Great for debugging during development. | anyhow (less pretty), plain Result (no context) |
+| **thiserror** | Derive macro for custom error types. Works well with color-eyre. | manual Error impl (boilerplate), anyhow (no typed errors) |
+| **regex** | Same engine as ripgrep. Fast, Unicode-aware, well-tested. | fancy-regex (slower), pcre2 (C dependency) |
+| **arboard** | Cross-platform clipboard. Simple API. | clipboard (older), copypasta (less maintained) |
+
+#### Why Edition 2024?
+
+Rust 2024 edition includes:
+- Improved async ergonomics
+- Better error messages
+- New language features
+
+If you have issues, fall back to `edition = "2021"`.
+
+---
+
+### Step 1.2: Directory Structure
 
 ```
 src/
-├── main.rs
-├── app.rs              # AppState, main loop
-├── error.rs            # Custom error types
+├── main.rs              # Entry point, wires everything together
+├── app.rs               # AppState struct, shared state
+├── error.rs             # Custom error types
 │
 ├── config/
-│   ├── mod.rs
-│   ├── port_config.rs  # PortConfig struct
-│   └── manager.rs      # Load/save config
+│   ├── mod.rs           # Re-exports
+│   ├── port_config.rs   # PortConfig struct
+│   └── manager.rs       # Load/save config files
 │
 ├── serial/
-│   ├── mod.rs
-│   ├── message.rs      # SerialMessage struct
-│   ├── command.rs      # SerialCommand enum
-│   ├── handler.rs      # Port manager task
-│   └── port.rs         # Single port task
+│   ├── mod.rs           # Re-exports
+│   ├── message.rs       # SerialMessage struct
+│   ├── command.rs       # SerialCommand enum
+│   ├── handler.rs       # Port manager (spawns port tasks)
+│   └── port.rs          # Single port read/write task
 │
 ├── ui/
-│   ├── mod.rs
-│   ├── app_ui.rs       # Main render function
-│   ├── display.rs      # Serial output display
-│   ├── input_box.rs    # Text input widget
+│   ├── mod.rs           # Re-exports
+│   ├── app_ui.rs        # Main render function
+│   ├── display.rs       # Serial output widget
+│   ├── input_box.rs     # Text input widget
 │   └── vim/
 │       ├── mod.rs
-│       └── mode.rs     # VimMode state
+│       └── mode.rs      # VimMode enum, Focus enum
 │
 ├── logger/
 │   ├── mod.rs
-│   └── writer.rs       # Log file writer
+│   └── writer.rs        # Async log file writer
 │
 └── notification/
     ├── mod.rs
-    └── system.rs       # Notification queue
+    └── system.rs        # Notification queue
 ```
+
+#### Why This Structure?
+
+**Separation by domain, not by type.**
+
+Bad structure (by type):
+```
+src/
+├── structs/
+├── enums/
+├── traits/
+└── functions/
+```
+
+Good structure (by domain):
+```
+src/
+├── serial/      # Everything about serial ports
+├── config/      # Everything about configuration
+├── ui/          # Everything about rendering
+```
+
+**Why?**
+
+1. **Locality**: When working on serial ports, all relevant code is in one directory.
+2. **Encapsulation**: Each module has a clear public API via `mod.rs`.
+3. **Compile times**: Rust compiles modules in parallel. Isolated modules = faster incremental builds.
+
+**Why `mod.rs` files?**
+
+The `mod.rs` pattern lets you control what's public:
+
+```rust
+// src/serial/mod.rs
+mod command;    // Private implementation
+mod message;    // Private implementation
+mod port;       // Private implementation
+
+pub use command::SerialCommand;  // Public API
+pub use message::SerialMessage;  // Public API
+pub use port::run_port_task;     // Public API
+```
+
+External code sees only what you export. Internal details stay hidden.
+
+---
 
 ### Step 1.3: Error Types
 
@@ -142,6 +249,67 @@ pub enum AppError {
 pub type Result<T> = std::result::Result<T, AppError>;
 ```
 
+#### Why Custom Error Types?
+
+**Problem with string errors:**
+```rust
+fn load_config() -> Result<Config, String> {
+    // Caller can't distinguish between "file not found" and "parse error"
+    Err("something went wrong".to_string())
+}
+```
+
+**Problem with `Box<dyn Error>`:**
+```rust
+fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    // Caller can't pattern match on error type
+    // No compile-time guarantees about what errors are possible
+}
+```
+
+**Why enum errors are better:**
+```rust
+fn load_config() -> Result<Config, AppError> {
+    // Caller knows exactly what can fail
+    // Can pattern match: if let AppError::Config(msg) = err { ... }
+    // Compiler warns about unhandled variants
+}
+```
+
+#### Why `#[from]` Attribute?
+
+The `#[from]` attribute auto-implements `From<T>`:
+
+```rust
+#[error("IO error: {0}")]
+Io(#[from] std::io::Error),
+```
+
+This lets you use `?` operator:
+```rust
+let content = std::fs::read_to_string(path)?;  // io::Error auto-converts to AppError::Io
+```
+
+Without `#[from]`, you'd need:
+```rust
+let content = std::fs::read_to_string(path).map_err(AppError::Io)?;
+```
+
+#### Why a Type Alias for Result?
+
+```rust
+pub type Result<T> = std::result::Result<T, AppError>;
+```
+
+Now you can write:
+```rust
+fn load_config() -> Result<Config>  // Instead of Result<Config, AppError>
+```
+
+Less typing, clearer intent.
+
+---
+
 ### Step 1.4: Basic Main
 
 Create `src/main.rs`:
@@ -161,20 +329,53 @@ use color_eyre::Result;
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // TODO: Initialize app
     println!("SerialTUI starting...");
 
     Ok(())
 }
 ```
 
-**Checkpoint:** `cargo build` should succeed.
+#### Why `#[tokio::main]`?
+
+This macro transforms:
+```rust
+#[tokio::main]
+async fn main() -> Result<()> {
+    // async code
+}
+```
+
+Into:
+```rust
+fn main() -> Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            // async code
+        })
+}
+```
+
+It creates the tokio runtime for you. The `multi_thread` variant uses all CPU cores.
+
+#### Why `color_eyre::install()`?
+
+This sets up panic and error hooks that:
+1. Print colorized error messages
+2. Include backtraces
+3. Show source code context
+
+Call it once at startup, before any errors can occur.
+
+**Checkpoint:** Run `cargo build`. If it compiles, Phase 1 is done.
 
 ---
 
 ## Phase 2: Config Module
 
-**Goal:** Load port configuration from TOML file.
+**Goal:** Load and save port configuration from TOML files.
 
 ### Step 2.1: PortConfig Struct
 
@@ -185,15 +386,21 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortConfig {
+    /// Display name shown in UI (e.g., "GPS", "Motor")
     pub name: String,
+
+    /// System path to serial port (e.g., "/dev/ttyUSB0", "COM3")
     pub path: String,
 
+    /// Baud rate. Common values: 9600, 115200, 921600
     #[serde(default = "default_baud")]
     pub baud_rate: u32,
 
+    /// Characters appended when sending data
     #[serde(default = "default_line_ending")]
     pub line_ending: String,
 
+    /// Hex color for display (e.g., "#FF5733")
     #[serde(default = "random_color")]
     pub color: String,
 }
@@ -204,11 +411,49 @@ fn random_color() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     format!("#{:02X}{:02X}{:02X}",
-        rng.gen_range(100..255),
+        rng.gen_range(100..255),  // Avoid dark colors (< 100)
         rng.gen_range(100..255),
         rng.gen_range(100..255))
 }
 ```
+
+#### Why Serde Derive?
+
+The `#[derive(Serialize, Deserialize)]` macro generates code to convert between Rust structs and various formats (TOML, JSON, etc.):
+
+```rust
+// Deserialize: TOML string → Rust struct
+let config: PortConfig = toml::from_str(toml_string)?;
+
+// Serialize: Rust struct → TOML string
+let toml_string = toml::to_string(&config)?;
+```
+
+Without serde, you'd write hundreds of lines of parsing code.
+
+#### Why `#[serde(default = "function")]`?
+
+This makes fields optional in the config file:
+
+```toml
+[[port]]
+name = "GPS"
+path = "/dev/ttyUSB0"
+# baud_rate, line_ending, color are all optional
+# They'll use default_baud(), default_line_ending(), random_color()
+```
+
+The user only specifies what they want to customize.
+
+#### Why Random Colors Start at 100?
+
+```rust
+rng.gen_range(100..255)  // Not 0..255
+```
+
+Colors below RGB(100, 100, 100) are too dark to see on typical dark terminal backgrounds. Starting at 100 ensures readable colors.
+
+---
 
 ### Step 2.2: Config Manager
 
@@ -227,24 +472,114 @@ pub struct Config {
 }
 
 impl Config {
+    /// Load config from file. Returns empty config if file doesn't exist.
     pub fn load(path: &Path) -> Result<Self> {
         if !path.exists() {
+            // No config file = empty config (not an error)
+            // User might be running for the first time
             return Ok(Config { port: vec![] });
         }
+
         let content = std::fs::read_to_string(path)
-            .map_err(|e| AppError::Config(e.to_string()))?;
+            .map_err(|e| AppError::Config(format!("Failed to read {}: {}", path.display(), e)))?;
+
         toml::from_str(&content)
-            .map_err(|e| AppError::Config(e.to_string()))
+            .map_err(|e| AppError::Config(format!("Failed to parse {}: {}", path.display(), e)))
     }
 
+    /// Save config to file. Creates parent directories if needed.
     pub fn save(&self, path: &Path) -> Result<()> {
+        // Ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
         let content = toml::to_string_pretty(self)
-            .map_err(|e| AppError::Config(e.to_string()))?;
+            .map_err(|e| AppError::Config(format!("Failed to serialize config: {}", e)))?;
+
         std::fs::write(path, content)?;
         Ok(())
     }
+
+    /// Validate config. Returns list of errors (empty = valid).
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        // Check for duplicate names
+        let mut names = std::collections::HashSet::new();
+        for port in &self.port {
+            if !names.insert(&port.name) {
+                errors.push(format!("Duplicate port name: {}", port.name));
+            }
+        }
+
+        // Check for duplicate paths
+        let mut paths = std::collections::HashSet::new();
+        for port in &self.port {
+            if !paths.insert(&port.path) {
+                errors.push(format!("Duplicate port path: {}", port.path));
+            }
+        }
+
+        errors
+    }
 }
 ```
+
+#### Why Return Empty Config Instead of Error?
+
+```rust
+if !path.exists() {
+    return Ok(Config { port: vec![] });  // Not Err(...)
+}
+```
+
+**First-run experience matters.**
+
+If a new user runs the app and gets "Error: config.toml not found", they'll think something is broken. Returning an empty config lets them:
+1. See the UI immediately
+2. Add ports through the UI
+3. Save config when ready
+
+#### Why Validate Separately?
+
+```rust
+pub fn validate(&self) -> Vec<String>  // Returns errors, not Result
+```
+
+Validation returns a list of problems, not a single error. This lets you show all issues at once:
+
+```
+Config errors:
+- Duplicate port name: GPS
+- Duplicate port path: /dev/ttyUSB0
+- Invalid baud rate: -1
+```
+
+Instead of fixing one error, rerunning, finding the next error, repeat.
+
+#### Why `to_string_pretty`?
+
+```rust
+toml::to_string_pretty(self)  // Not to_string()
+```
+
+`to_string_pretty` adds newlines and indentation:
+
+```toml
+# Pretty (readable)
+[[port]]
+name = "GPS"
+path = "/dev/ttyUSB0"
+baud_rate = 115200
+
+# Not pretty (one long line)
+port = [{name = "GPS", path = "/dev/ttyUSB0", baud_rate = 115200}]
+```
+
+Config files are edited by humans. Make them human-friendly.
+
+---
 
 ### Step 2.3: Config mod.rs
 
@@ -258,7 +593,22 @@ pub use manager::Config;
 pub use port_config::PortConfig;
 ```
 
-**Checkpoint:** Create `config/config.toml` with test data:
+#### Why Re-export?
+
+Without re-exports, external code needs:
+```rust
+use crate::config::manager::Config;
+use crate::config::port_config::PortConfig;
+```
+
+With re-exports:
+```rust
+use crate::config::{Config, PortConfig};
+```
+
+The internal file structure is hidden. You can reorganize files without breaking external code.
+
+**Checkpoint:** Create `config/config.toml`:
 
 ```toml
 [[port]]
@@ -266,7 +616,11 @@ name = "Test"
 path = "/dev/ttyUSB0"
 ```
 
-Load and print it from main.
+Add to main.rs:
+```rust
+let config = config::Config::load(Path::new("config/config.toml"))?;
+println!("Loaded {} ports", config.port.len());
+```
 
 ---
 
@@ -281,27 +635,129 @@ Create `src/serial/message.rs`:
 ```rust
 use chrono::{DateTime, Utc};
 
+/// A single line of data received from a serial port.
 #[derive(Debug, Clone)]
 pub struct SerialMessage {
+    /// When the message was received (UTC)
     pub timestamp: DateTime<Utc>,
+
+    /// Human-readable port name (e.g., "GPS")
     pub port_name: String,
+
+    /// System path (e.g., "/dev/ttyUSB0")
     pub port_path: String,
+
+    /// The actual data (one line, without line ending)
     pub data: String,
 }
 ```
+
+#### Why Both `port_name` and `port_path`?
+
+**port_name** is for humans:
+- Shown in UI: `[GPS] NMEA: $GPGGA...`
+- Used in log filenames: `GPS.log`
+- Used in scripts: `sendstr(["GPS"], "PING")`
+
+**port_path** is for the system:
+- Actual device path: `/dev/ttyUSB0`
+- Needed if you want to reconnect
+- Useful for debugging ("which physical port is GPS?")
+
+Keeping both avoids repeated lookups.
+
+#### Why UTC Timestamps?
+
+```rust
+pub timestamp: DateTime<Utc>,  // Not DateTime<Local>
+```
+
+1. **Consistency**: All messages use the same timezone, even if system timezone changes.
+2. **Logging**: Log files are unambiguous across timezones.
+3. **Sorting**: UTC timestamps sort correctly without timezone conversion.
+
+Display can convert to local time when rendering.
+
+#### Why `Clone`?
+
+```rust
+#[derive(Debug, Clone)]
+```
+
+Messages are sent through a broadcast channel. Each receiver gets a clone. Without `Clone`, you'd need `Arc<SerialMessage>` everywhere.
+
+For small structs like this, cloning is cheap. For large data, you'd use `Arc` or `Bytes`.
+
+---
 
 ### Step 3.2: SerialCommand
 
 Create `src/serial/command.rs`:
 
 ```rust
+/// Commands sent to the serial handler to control ports.
 #[derive(Debug, Clone)]
 pub enum SerialCommand {
-    Send { port_names: Vec<String>, data: Vec<u8> },
-    Connect { port_name: String },
-    Disconnect { port_name: String },
+    /// Send data to one or more ports
+    Send {
+        /// Port names to send to (e.g., ["GPS", "Motor"])
+        port_names: Vec<String>,
+        /// Raw bytes to send
+        data: Vec<u8>
+    },
+
+    /// Connect to a port (start reading)
+    Connect {
+        port_name: String
+    },
+
+    /// Disconnect from a port (stop reading)
+    Disconnect {
+        port_name: String
+    },
 }
 ```
+
+#### Why an Enum for Commands?
+
+**Alternative: Multiple channels**
+```rust
+let (send_tx, send_rx) = mpsc::channel();      // For send commands
+let (connect_tx, connect_rx) = mpsc::channel(); // For connect commands
+let (disconnect_tx, disconnect_rx) = mpsc::channel(); // For disconnect commands
+```
+
+Problems:
+- Three channels to manage
+- Handler needs `select!` over three receivers
+- Adding new commands means new channels
+
+**Better: Single channel with enum**
+```rust
+let (cmd_tx, cmd_rx) = mpsc::channel::<SerialCommand>();
+```
+
+Benefits:
+- One channel for all commands
+- Adding commands = adding enum variants
+- Pattern matching handles dispatch
+
+#### Why `Vec<u8>` for Data?
+
+```rust
+data: Vec<u8>  // Not String
+```
+
+Serial data can be:
+- Text: `"PING\r\n"`
+- Binary: `[0x01, 0x02, 0x03, 0x04]`
+- Mixed: `"DATA:" + [binary payload]`
+
+`Vec<u8>` handles all cases. `String` would reject invalid UTF-8.
+
+The `sendstr` script function converts strings to bytes. The `sendbin` function parses hex strings to bytes. Both produce `Vec<u8>`.
+
+---
 
 ### Step 3.3: Single Port Task
 
@@ -315,17 +771,31 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::broadcast;
 use tokio_serial::SerialPortBuilderExt;
 
+/// Run a task that reads from a serial port and broadcasts messages.
+///
+/// This function loops forever, reconnecting on errors.
+/// To stop it, abort the task handle.
 pub async fn run_port_task(
     config: PortConfig,
     tx: broadcast::Sender<SerialMessage>,
 ) {
+    let mut reconnect_delay = std::time::Duration::from_secs(1);
+    const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(8);
+
     loop {
         match connect_and_read(&config, &tx).await {
-            Ok(()) => break, // Clean shutdown
+            Ok(()) => {
+                // Clean shutdown (task was aborted)
+                break;
+            }
             Err(e) => {
-                eprintln!("Port {} error: {}", config.name, e);
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                // Reconnect
+                eprintln!("[{}] Error: {}. Reconnecting in {:?}...",
+                    config.name, e, reconnect_delay);
+
+                tokio::time::sleep(reconnect_delay).await;
+
+                // Exponential backoff: 1s -> 2s -> 4s -> 8s -> 8s -> ...
+                reconnect_delay = std::cmp::min(reconnect_delay * 2, MAX_DELAY);
             }
         }
     }
@@ -335,9 +805,14 @@ async fn connect_and_read(
     config: &PortConfig,
     tx: &broadcast::Sender<SerialMessage>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Open serial port
     let port = tokio_serial::new(&config.path, config.baud_rate)
         .open_native_async()?;
 
+    // Reset reconnect delay on successful connection
+    // (handled by caller resetting delay after Ok)
+
+    // Wrap in buffered reader for line-by-line reading
     let mut reader = BufReader::new(port);
     let mut line = String::new();
 
@@ -346,7 +821,8 @@ async fn connect_and_read(
         let bytes_read = reader.read_line(&mut line).await?;
 
         if bytes_read == 0 {
-            return Err("Port disconnected".into());
+            // EOF = port disconnected
+            return Err("Port disconnected (EOF)".into());
         }
 
         let msg = SerialMessage {
@@ -356,10 +832,81 @@ async fn connect_and_read(
             data: line.trim_end().to_string(),
         };
 
-        let _ = tx.send(msg); // Ignore if no receivers
+        // Send to broadcast channel
+        // Ignore error (happens if no receivers, which is fine)
+        let _ = tx.send(msg);
     }
 }
 ```
+
+#### Why Exponential Backoff?
+
+When a port disconnects, you want to reconnect. But not too aggressively:
+
+**Without backoff (immediate retry):**
+```
+[GPS] Error: Device not found
+[GPS] Error: Device not found
+[GPS] Error: Device not found
+... (thousands of times per second)
+```
+
+This wastes CPU and floods logs.
+
+**With exponential backoff:**
+```
+[GPS] Error: Device not found. Reconnecting in 1s...
+[GPS] Error: Device not found. Reconnecting in 2s...
+[GPS] Error: Device not found. Reconnecting in 4s...
+[GPS] Error: Device not found. Reconnecting in 8s...
+[GPS] Error: Device not found. Reconnecting in 8s...  (capped)
+```
+
+The delay doubles each time (1→2→4→8) but caps at 8 seconds. When the device comes back, you reconnect within 8 seconds.
+
+#### Why `BufReader`?
+
+```rust
+let mut reader = BufReader::new(port);
+```
+
+Serial data arrives byte-by-byte. Without buffering:
+```rust
+// Bad: One syscall per byte
+let mut byte = [0u8; 1];
+port.read(&mut byte).await?;
+```
+
+With `BufReader`:
+```rust
+// Good: Reads chunks, returns lines
+reader.read_line(&mut line).await?;
+```
+
+`BufReader` reads large chunks into an internal buffer, then returns data from the buffer. Far fewer syscalls.
+
+#### Why `read_line` Returns Line Without Newline?
+
+Actually, `read_line` *includes* the newline. That's why we do:
+```rust
+data: line.trim_end().to_string(),
+```
+
+`trim_end()` removes trailing `\n`, `\r\n`, or any whitespace. This normalizes line endings across platforms.
+
+#### Why Ignore Broadcast Send Errors?
+
+```rust
+let _ = tx.send(msg);  // Ignore result
+```
+
+`broadcast::Sender::send` fails if there are no receivers. This is fine:
+- At startup, receivers might not exist yet
+- If all receivers disconnect, we still want to keep reading
+
+The `let _ =` explicitly ignores the result (Rust warns about unused Results).
+
+---
 
 ### Step 3.4: Serial mod.rs
 
@@ -375,13 +922,32 @@ pub use message::SerialMessage;
 pub use port::run_port_task;
 ```
 
-**Checkpoint:** Spawn a port task, subscribe to broadcast, print messages.
+**Checkpoint:** Test with a real serial port or a virtual one:
+
+```rust
+// In main.rs
+let (tx, mut rx) = broadcast::channel(1000);
+
+let config = PortConfig {
+    name: "Test".to_string(),
+    path: "/dev/ttyUSB0".to_string(),  // Adjust for your system
+    baud_rate: 115200,
+    line_ending: "\n".to_string(),
+    color: "#FF0000".to_string(),
+};
+
+tokio::spawn(run_port_task(config, tx));
+
+while let Ok(msg) = rx.recv().await {
+    println!("[{}] {}", msg.port_name, msg.data);
+}
+```
 
 ---
 
 ## Phase 4: Basic TUI
 
-**Goal:** Display serial messages in a terminal UI.
+**Goal:** Display serial messages in a terminal interface.
 
 ### Step 4.1: AppState
 
@@ -394,11 +960,21 @@ use std::collections::{HashMap, VecDeque};
 use tokio::sync::Mutex;
 use std::sync::Arc;
 
+/// Central application state shared between all tasks.
 pub struct AppState {
+    /// Port configurations keyed by name
     pub port_configs: HashMap<String, PortConfig>,
+
+    /// Buffer of received messages (newest at back)
     pub display_buffer: VecDeque<SerialMessage>,
+
+    /// Scroll position (0 = bottom/newest, higher = older)
     pub scroll_offset: usize,
+
+    /// Current text in input box
     pub input_text: String,
+
+    /// Whether app should keep running
     pub running: bool,
 }
 
@@ -414,8 +990,67 @@ impl AppState {
     }
 }
 
+/// Thread-safe handle to AppState
 pub type SharedState = Arc<Mutex<AppState>>;
 ```
+
+#### Why `Arc<Mutex<T>>`?
+
+Multiple async tasks need to access `AppState`:
+- UI task reads it to render
+- Display buffer updater writes new messages
+- Command dispatcher modifies settings
+
+**`Arc`** (Atomic Reference Counted) allows multiple owners:
+```rust
+let state = Arc::new(Mutex::new(AppState::new()));
+let state_clone = state.clone();  // Both point to same data
+```
+
+**`Mutex`** ensures only one task accesses data at a time:
+```rust
+let mut guard = state.lock().await;  // Waits if another task has the lock
+guard.display_buffer.push_back(msg);
+// Lock released when guard is dropped
+```
+
+#### Why `tokio::sync::Mutex` Instead of `std::sync::Mutex`?
+
+```rust
+use tokio::sync::Mutex;  // Not std::sync::Mutex
+```
+
+**`std::sync::Mutex`** blocks the entire thread while waiting.
+**`tokio::sync::Mutex`** yields to the async runtime while waiting.
+
+In async code, blocking a thread is bad—it can't run other tasks. Tokio's mutex cooperates with the scheduler.
+
+**Exception:** For very short critical sections with no `.await` inside, `std::sync::Mutex` is faster. But `tokio::sync::Mutex` is safer by default.
+
+#### Why `VecDeque` for Display Buffer?
+
+```rust
+pub display_buffer: VecDeque<SerialMessage>,
+```
+
+`VecDeque` is a double-ended queue. It's efficient for:
+- `push_back`: Add new messages (O(1))
+- `pop_front`: Remove old messages when buffer is full (O(1))
+- Iteration: Render visible portion
+
+`Vec` would be O(n) for `pop_front` (shifts all elements).
+
+#### Why Pre-allocate with Capacity?
+
+```rust
+VecDeque::with_capacity(10000)
+```
+
+Without capacity, the deque starts empty and grows by reallocating. With capacity, it pre-allocates space for 10,000 messages.
+
+This avoids allocations during normal operation. Memory is cheap; stuttering UI is annoying.
+
+---
 
 ### Step 4.2: Main Layout
 
@@ -431,25 +1066,28 @@ use ratatui::{
     Frame,
 };
 
+/// Render the entire UI.
 pub fn render(frame: &mut Frame, state: &AppState) {
+    // Split screen into two areas: display (flexible) and input (fixed height)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),    // Display
-            Constraint::Length(3), // Input
+            Constraint::Min(3),    // Display takes remaining space (min 3 lines)
+            Constraint::Length(3), // Input is exactly 3 lines
         ])
         .split(frame.area());
 
-    // Display area
     render_display(frame, state, chunks[0]);
-
-    // Input area
     render_input(frame, state, chunks[1]);
 }
 
 fn render_display(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
-    let height = area.height as usize - 2; // Account for borders
+    // Calculate visible range
+    let height = area.height as usize - 2; // Subtract 2 for borders
     let total = state.display_buffer.len();
+
+    // scroll_offset=0 means show newest (bottom)
+    // scroll_offset=10 means skip 10 newest, show older
     let start = total.saturating_sub(height + state.scroll_offset);
     let end = total.saturating_sub(state.scroll_offset);
 
@@ -469,17 +1107,79 @@ fn render_display(frame: &mut Frame, state: &AppState, area: ratatui::layout::Re
         .collect();
 
     let display = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title("Serial Output"));
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title("Serial Output"));
 
     frame.render_widget(display, area);
 }
 
 fn render_input(frame: &mut Frame, state: &AppState, area: ratatui::layout::Rect) {
     let input = Paragraph::new(state.input_text.as_str())
-        .block(Block::default().borders(Borders::ALL).title("Input"));
+        .block(Block::default()
+            .borders(Borders::ALL)
+            .title("Input"));
+
     frame.render_widget(input, area);
 }
 ```
+
+#### Why This Layout?
+
+```
+┌─────────────────────────────────┐
+│ Serial Output                   │  <- Flexible height (Constraint::Min)
+│ [GPS] data...                   │
+│ [Motor] data...                 │
+│                                 │
+├─────────────────────────────────┤
+│ Input                           │  <- Fixed height (Constraint::Length)
+│ > user typing here              │
+└─────────────────────────────────┘
+```
+
+**`Constraint::Min(3)`** means "at least 3 lines, but take as much as available."
+**`Constraint::Length(3)`** means "exactly 3 lines."
+
+The display area grows/shrinks with terminal size. The input stays constant.
+
+#### Why Scroll Offset Works This Way?
+
+```rust
+let start = total.saturating_sub(height + state.scroll_offset);
+let end = total.saturating_sub(state.scroll_offset);
+```
+
+Think of `scroll_offset` as "how many lines from the bottom are hidden":
+- `scroll_offset=0`: Show the newest `height` lines (normal view)
+- `scroll_offset=10`: Hide the 10 newest lines, show older ones
+
+This is inverted from typical scrolling but matches vim's `Ctrl+E`/`Ctrl+Y` behavior.
+
+`saturating_sub` prevents underflow (returns 0 instead of panicking on negative).
+
+#### Why Ratatui's Immediate Mode?
+
+Ratatui uses immediate mode rendering:
+```rust
+loop {
+    terminal.draw(|frame| render(frame, &state))?;  // Redraw everything
+    handle_input()?;
+}
+```
+
+Every frame, you redraw the entire UI from state. There's no "update this widget" API.
+
+**Benefits:**
+- Simple mental model (state → UI)
+- No stale widgets
+- Easy to reason about
+
+**Tradeoff:**
+- Redraws everything even if nothing changed
+- Fast enough for TUIs (terminals are slow anyway)
+
+---
 
 ### Step 4.3: Event Loop
 
@@ -504,37 +1204,43 @@ use tokio::sync::{broadcast, Mutex};
 async fn main() -> Result<()> {
     color_eyre::install()?;
 
-    // Setup state
+    // Create shared state
     let state: SharedState = Arc::new(Mutex::new(AppState::new()));
 
-    // Setup channels
+    // Create broadcast channel for serial messages
     let (serial_tx, _) = broadcast::channel::<serial::SerialMessage>(1000);
 
-    // Spawn display buffer updater
-    let state_clone = state.clone();
-    let mut serial_rx = serial_tx.subscribe();
+    // Spawn task to update display buffer from serial messages
+    spawn_display_updater(state.clone(), serial_tx.subscribe());
+
+    // Initialize terminal and run UI
+    let terminal = ratatui::init();
+    let result = run_tui(terminal, state).await;
+    ratatui::restore();  // Always restore terminal, even on error
+
+    result
+}
+
+fn spawn_display_updater(
+    state: SharedState,
+    mut rx: broadcast::Receiver<serial::SerialMessage>,
+) {
     tokio::spawn(async move {
-        while let Ok(msg) = serial_rx.recv().await {
-            let mut s = state_clone.lock().await;
+        while let Ok(msg) = rx.recv().await {
+            let mut s = state.lock().await;
             s.display_buffer.push_back(msg);
-            // Cap buffer size
+
+            // Cap buffer size to prevent unbounded memory growth
             while s.display_buffer.len() > 10000 {
                 s.display_buffer.pop_front();
             }
         }
     });
-
-    // Run TUI
-    let terminal = ratatui::init();
-    let result = run_tui(terminal, state).await;
-    ratatui::restore();
-
-    result
 }
 
 async fn run_tui(mut terminal: DefaultTerminal, state: SharedState) -> Result<()> {
     loop {
-        // Render
+        // Render current state
         {
             let s = state.lock().await;
             terminal.draw(|frame| ui::app_ui::render(frame, &s))?;
@@ -542,10 +1248,13 @@ async fn run_tui(mut terminal: DefaultTerminal, state: SharedState) -> Result<()
                 break;
             }
         }
+        // Lock released here (guard dropped)
 
-        // Handle input (non-blocking)
+        // Poll for input with timeout
+        // 16ms ≈ 60 FPS - fast enough for smooth UI, slow enough to not waste CPU
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
+                // Only handle key press (not release)
                 if key.kind == KeyEventKind::Press {
                     let mut s = state.lock().await;
                     match key.code {
@@ -563,6 +1272,81 @@ async fn run_tui(mut terminal: DefaultTerminal, state: SharedState) -> Result<()
 }
 ```
 
+#### Why Separate the Lock Scope?
+
+```rust
+{
+    let s = state.lock().await;
+    terminal.draw(...)?;
+    if !s.running { break; }
+}  // Lock released here
+
+// Now we can do other things without holding the lock
+if event::poll(...)? { ... }
+```
+
+Holding a lock during I/O (event polling) is bad:
+- Other tasks can't access state while we wait for input
+- Can cause deadlocks if another task needs the lock
+
+By scoping the lock, we hold it only during rendering.
+
+#### Why 16ms Poll Timeout?
+
+```rust
+event::poll(Duration::from_millis(16))?
+```
+
+- **16ms ≈ 60 FPS**: Smooth enough for UI updates
+- **If input arrives**: Returns immediately, handles input
+- **If no input**: Returns after 16ms, loops back to render
+
+This balances responsiveness with CPU usage. Without timeout, you'd either:
+- Block forever waiting for input (UI doesn't update)
+- Spin in a tight loop (100% CPU)
+
+#### Why Check `KeyEventKind::Press`?
+
+```rust
+if key.kind == KeyEventKind::Press {
+```
+
+Terminals can report:
+- `Press`: Key pressed down
+- `Release`: Key released
+- `Repeat`: Key held down (auto-repeat)
+
+Without this check, you'd handle the same keypress multiple times.
+
+#### Why `ratatui::restore()` is Critical?
+
+```rust
+let terminal = ratatui::init();
+let result = run_tui(terminal, state).await;
+ratatui::restore();  // MUST call this
+```
+
+`ratatui::init()` puts the terminal in "raw mode":
+- No line buffering
+- No echo
+- No Ctrl+C handling
+- Alternate screen (hides previous content)
+
+If you don't call `restore()`:
+- Terminal stays in raw mode
+- User can't type normally
+- Previous screen content is lost
+
+Even on panic, you want to restore. Consider using a guard:
+```rust
+struct TerminalGuard;
+impl Drop for TerminalGuard {
+    fn drop(&mut self) { ratatui::restore(); }
+}
+```
+
+---
+
 ### Step 4.4: UI mod.rs
 
 Create `src/ui/mod.rs`:
@@ -571,49 +1355,137 @@ Create `src/ui/mod.rs`:
 pub mod app_ui;
 ```
 
-**Checkpoint:** `cargo run` shows a TUI with display and input areas.
+**Checkpoint:** `cargo run` should show a TUI. Press 'q' to quit. Type characters to see input.
 
 ---
 
 ## Phase 5: Channel Wiring
 
-**Goal:** Connect all components with message passing.
+**Goal:** Connect all components with proper message passing.
 
-### Key Channels
+### The Channel Architecture
+
+```
+┌─────────────┐  AppCommand   ┌──────────────┐  SerialCommand  ┌─────────────┐
+│   UI Task   │──────────────▶│   Command    │────────────────▶│   Serial    │
+│             │               │  Dispatcher  │                 │   Handler   │
+└─────────────┘               └──────────────┘                 └──────┬──────┘
+                                     │                                │
+                              ┌──────┴──────┐                         │
+                              │             │                   broadcast
+                              ▼             ▼                         │
+                         Notification   Script                        │
+                           System       Engine                        │
+                                          │                           │
+                                          │ SerialCommand             │
+                                          └───────────────────────────┤
+                                                                      │
+                    ┌─────────────────────────────────────────────────┘
+                    │
+                    ▼
+            ┌───────────────┐
+            │   broadcast   │──────┬──────────┬──────────────┐
+            │   channel     │      │          │              │
+            └───────────────┘      ▼          ▼              ▼
+                              Display     Logger        Script
+                              Updater                   (waitstr)
+```
+
+### Why This Topology?
+
+1. **UI → Command Dispatcher**: UI doesn't directly control serial ports. It sends high-level commands ("send this text", "run this script") to a dispatcher.
+
+2. **Command Dispatcher → Serial Handler**: Dispatcher translates AppCommands to SerialCommands. This separation means the UI doesn't know serial implementation details.
+
+3. **Serial Handler → broadcast**: All serial data goes through one broadcast channel. Multiple consumers subscribe without coordination.
+
+4. **Script Engine → Serial Handler**: Scripts send commands through the same SerialCommand channel as the dispatcher. Scripts are just another command source.
+
+### Channel Types and Why
 
 ```rust
-// Commands from UI to dispatcher
+// mpsc: Multiple producers, single consumer
+// Used when many sources send to one handler
 let (app_cmd_tx, app_cmd_rx) = tokio::sync::mpsc::channel::<AppCommand>(100);
 
-// Commands to serial handler
-let (serial_cmd_tx, serial_cmd_rx) = tokio::sync::mpsc::channel::<SerialCommand>(100);
+// broadcast: Multiple producers, multiple consumers
+// Used when one source sends to many handlers
+let (serial_tx, _) = tokio::sync::broadcast::channel::<SerialMessage>(1000);
 
-// Serial data to all consumers
-let (serial_broadcast_tx, _) = tokio::sync::broadcast::channel::<SerialMessage>(1000);
-
-// Notifications from anywhere
-let (notif_tx, notif_rx) = tokio::sync::mpsc::channel::<Notification>(100);
+// oneshot: Single message, then channel closes
+// Used for one-time signals like "abort script"
+let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
 ```
 
 ### AppCommand Enum
 
 ```rust
+use std::path::PathBuf;
+
+/// Commands from UI to the command dispatcher.
 pub enum AppCommand {
+    /// Shut down the application
     Quit,
-    SendText { ports: Vec<String>, text: String },
-    RunScript { path: PathBuf },
+
+    /// Send text to specified ports
+    SendText {
+        ports: Vec<String>,
+        text: String
+    },
+
+    /// Start executing a script
+    RunScript {
+        path: PathBuf
+    },
+
+    /// Abort currently running script
     StopScript,
+
+    /// Toggle debug screen visibility
     ToggleDebug,
+
+    /// Clear the display buffer
     ClearDisplay,
+
+    /// Save current configuration to file
+    SaveConfig,
 }
 ```
 
-### Command Dispatcher Pattern
+#### Why Separate AppCommand from SerialCommand?
+
+**AppCommand** is high-level, user-facing:
+- "Send this text to selected ports"
+- "Run this script"
+- "Quit the app"
+
+**SerialCommand** is low-level, implementation:
+- "Send these bytes to these ports"
+- "Connect this port"
+- "Disconnect this port"
+
+The command dispatcher translates between them:
+```rust
+AppCommand::SendText { ports, text } => {
+    let bytes = (text + &line_ending).into_bytes();
+    serial_tx.send(SerialCommand::Send { port_names: ports, data: bytes }).await;
+}
+```
+
+This separation means:
+- UI doesn't know about line endings
+- UI doesn't know about byte encoding
+- Serial handler doesn't know about "scripts" or "quit"
+
+### Command Dispatcher Implementation
 
 ```rust
-async fn command_dispatcher(
+use tokio::sync::mpsc;
+
+pub async fn run_command_dispatcher(
     mut rx: mpsc::Receiver<AppCommand>,
     serial_tx: mpsc::Sender<SerialCommand>,
+    notif_tx: mpsc::Sender<Notification>,
     state: SharedState,
 ) {
     while let Some(cmd) = rx.recv().await {
@@ -622,261 +1494,466 @@ async fn command_dispatcher(
                 state.lock().await.running = false;
                 break;
             }
+
             AppCommand::SendText { ports, text } => {
-                let _ = serial_tx.send(SerialCommand::Send {
+                // Get line ending from config (or default)
+                let line_ending = "\n";  // TODO: get from config
+                let data = (text + line_ending).into_bytes();
+
+                if let Err(e) = serial_tx.send(SerialCommand::Send {
                     port_names: ports,
-                    data: text.into_bytes(),
-                }).await;
+                    data
+                }).await {
+                    let _ = notif_tx.send(Notification::error(
+                        format!("Failed to send: {}", e)
+                    )).await;
+                }
             }
+
+            AppCommand::ClearDisplay => {
+                state.lock().await.display_buffer.clear();
+                let _ = notif_tx.send(Notification::info("Display cleared")).await;
+            }
+
+            AppCommand::ToggleDebug => {
+                let mut s = state.lock().await;
+                s.debug_mode = !s.debug_mode;
+            }
+
             // ... other commands
         }
     }
 }
 ```
 
+#### Why Not Just Handle Commands in the UI Task?
+
+**Problems with handling commands in UI:**
+```rust
+// In UI task
+match key.code {
+    KeyCode::Enter => {
+        // Bad: UI task waits for serial send
+        serial_tx.send(cmd).await?;
+    }
+}
+```
+
+- UI blocks while sending
+- UI knows about SerialCommand details
+- Complex logic clutters UI code
+
+**Benefits of dispatcher:**
+- UI just sends AppCommand and continues
+- Dispatcher handles translation, error handling, notifications
+- Easier to test dispatcher in isolation
+
 ---
 
 ## Phase 6: Multi-Port Support
 
-**Goal:** Handle multiple serial ports with a port manager.
+**Goal:** Handle multiple serial ports simultaneously.
 
-### Port Manager
-
-Create `src/serial/handler.rs`:
+### Port Manager Design
 
 ```rust
-use super::{SerialCommand, SerialMessage};
-use crate::config::PortConfig;
 use std::collections::HashMap;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 
+/// Manages multiple serial port tasks.
 pub struct PortManager {
-    ports: HashMap<String, JoinHandle<()>>,
+    /// Running port tasks keyed by port name
+    ports: HashMap<String, PortHandle>,
+
+    /// Broadcast sender for serial messages
     broadcast_tx: broadcast::Sender<SerialMessage>,
+
+    /// Per-port write channels
+    write_channels: HashMap<String, mpsc::Sender<Vec<u8>>>,
 }
 
-impl PortManager {
-    pub fn new(broadcast_tx: broadcast::Sender<SerialMessage>) -> Self {
-        Self {
-            ports: HashMap::new(),
-            broadcast_tx,
-        }
-    }
+struct PortHandle {
+    task: JoinHandle<()>,
+    write_tx: mpsc::Sender<Vec<u8>>,
+}
+```
 
-    pub fn connect(&mut self, config: PortConfig) {
-        let tx = self.broadcast_tx.clone();
-        let name = config.name.clone();
+#### Why Per-Port Write Channels?
 
-        let handle = tokio::spawn(async move {
-            super::port::run_port_task(config, tx).await;
-        });
+Reading is broadcast (one to many): one port sends to many consumers.
+Writing is targeted (many to one): many sources send to one port.
 
-        self.ports.insert(name, handle);
-    }
+```rust
+// Reading: broadcast
+let (broadcast_tx, _) = broadcast::channel(1000);
+// All ports send to broadcast_tx
+// Multiple receivers (display, logger, script) subscribe
 
-    pub fn disconnect(&mut self, name: &str) {
-        if let Some(handle) = self.ports.remove(name) {
-            handle.abort();
-        }
+// Writing: mpsc per port
+let (write_tx, write_rx) = mpsc::channel(100);
+// PortManager holds write_tx
+// Port task holds write_rx
+```
+
+When `SerialCommand::Send { port_names: ["GPS", "Motor"], data }` arrives:
+```rust
+for name in port_names {
+    if let Some(handle) = self.ports.get(&name) {
+        handle.write_tx.send(data.clone()).await?;
     }
 }
+```
 
-pub async fn run_serial_handler(
-    mut cmd_rx: mpsc::Receiver<SerialCommand>,
+### Port Task with Read/Write
+
+```rust
+pub async fn run_port_task(
+    config: PortConfig,
     broadcast_tx: broadcast::Sender<SerialMessage>,
-    initial_configs: Vec<PortConfig>,
+    mut write_rx: mpsc::Receiver<Vec<u8>>,
 ) {
-    let mut manager = PortManager::new(broadcast_tx);
-
-    // Connect initial ports
-    for config in initial_configs {
-        manager.connect(config);
+    loop {
+        match connect_and_run(&config, &broadcast_tx, &mut write_rx).await {
+            Ok(()) => break,
+            Err(e) => {
+                eprintln!("[{}] Error: {}", config.name, e);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        }
     }
+}
 
-    // Handle commands
-    while let Some(cmd) = cmd_rx.recv().await {
-        match cmd {
-            SerialCommand::Connect { port_name } => {
-                // Need to get config from somewhere
+async fn connect_and_run(
+    config: &PortConfig,
+    broadcast_tx: &broadcast::Sender<SerialMessage>,
+    write_rx: &mut mpsc::Receiver<Vec<u8>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let port = tokio_serial::new(&config.path, config.baud_rate)
+        .open_native_async()?;
+
+    // Split into reader and writer
+    let (reader, mut writer) = tokio::io::split(port);
+    let mut reader = BufReader::new(reader);
+    let mut line = String::new();
+
+    loop {
+        tokio::select! {
+            // Read from port
+            result = reader.read_line(&mut line) => {
+                let bytes_read = result?;
+                if bytes_read == 0 {
+                    return Err("Disconnected".into());
+                }
+
+                let msg = SerialMessage {
+                    timestamp: Utc::now(),
+                    port_name: config.name.clone(),
+                    port_path: config.path.clone(),
+                    data: line.trim_end().to_string(),
+                };
+                let _ = broadcast_tx.send(msg);
+                line.clear();
             }
-            SerialCommand::Disconnect { port_name } => {
-                manager.disconnect(&port_name);
-            }
-            SerialCommand::Send { port_names, data } => {
-                // Route to specific ports (needs write channel per port)
+
+            // Write to port
+            Some(data) = write_rx.recv() => {
+                writer.write_all(&data).await?;
             }
         }
     }
 }
 ```
+
+#### Why `tokio::select!`?
+
+We need to simultaneously:
+- Read from the serial port (blocking until data arrives)
+- Write to the serial port (blocking until write channel has data)
+
+`select!` waits for whichever happens first:
+```rust
+tokio::select! {
+    result = reader.read_line(&mut line) => { /* handle read */ }
+    Some(data) = write_rx.recv() => { /* handle write */ }
+}
+```
+
+Without `select!`, you'd need separate read/write tasks and more channels.
+
+#### Why `tokio::io::split`?
+
+```rust
+let (reader, writer) = tokio::io::split(port);
+```
+
+Serial ports are single resources. `split` creates separate reader/writer handles that can be used in the same `select!`.
+
+Without splitting, you'd need `Arc<Mutex<Port>>` and careful lock management.
 
 ---
 
 ## Phase 7: Vim Navigation
 
-**Goal:** Navigate display with vim keys.
+**Goal:** Navigate the display buffer with vim-style keys.
 
-### VimMode State
+### Why Vim Keys?
 
-Create `src/ui/vim/mode.rs`:
+1. **Efficiency**: Navigate without leaving home row
+2. **Familiarity**: Many developers already know vim
+3. **Terminal tradition**: Fits the TUI aesthetic
+4. **No mouse needed**: Works over SSH
+
+### VimMode State Machine
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum VimMode {
-    Normal,
-    Insert,
-    Command,
-    Search,
+    #[default]
+    Normal,   // Navigation mode (j/k/gg/G)
+    Insert,   // Typing mode (text goes to input)
+    Command,  // : command mode
+    Search,   // / search mode
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Focus {
-    Display,
-    InputBox,
+    #[default]
+    Display,  // Focus on serial output (navigation)
+    InputBox, // Focus on input box (typing)
 }
 ```
 
-### Navigation Keys
+#### Why Separate Mode and Focus?
 
-| Key | Action | Implementation |
-|-----|--------|----------------|
-| `j` | Scroll down | `scroll_offset = scroll_offset.saturating_sub(1)` |
-| `k` | Scroll up | `scroll_offset += 1` |
-| `gg` | Top | `scroll_offset = max_offset` |
-| `G` | Bottom | `scroll_offset = 0` |
-| `Ctrl+d` | Half page down | `scroll_offset = scroll_offset.saturating_sub(height/2)` |
-| `Ctrl+u` | Half page up | `scroll_offset += height/2` |
+**Mode** = how keys are interpreted
+**Focus** = which widget receives input
 
-### Key Sequence Handling
+Examples:
+- Focus=Display, Mode=Normal: j/k scroll display
+- Focus=Display, Mode=Search: typing goes to search box
+- Focus=InputBox, Mode=Normal: h/l move cursor in input
+- Focus=InputBox, Mode=Insert: typing goes to input
+
+### Key Handling
 
 ```rust
-struct KeyState {
-    pending: Option<char>,  // For multi-char commands like 'gg'
+pub struct KeyState {
+    /// For multi-key sequences like 'gg'
+    pending: Option<char>,
+
+    /// Current mode
+    mode: VimMode,
+
+    /// Current focus
+    focus: Focus,
 }
 
-fn handle_key(state: &mut AppState, key: KeyCode, keys: &mut KeyState) {
-    match (keys.pending, key) {
-        (Some('g'), KeyCode::Char('g')) => {
-            // Jump to top
-            keys.pending = None;
+impl KeyState {
+    pub fn handle_key(&mut self, key: KeyCode, state: &mut AppState) -> Option<Action> {
+        match (self.focus, self.mode) {
+            (Focus::Display, VimMode::Normal) => self.handle_display_normal(key, state),
+            (Focus::Display, VimMode::Search) => self.handle_display_search(key, state),
+            (Focus::InputBox, VimMode::Normal) => self.handle_input_normal(key, state),
+            (Focus::InputBox, VimMode::Insert) => self.handle_input_insert(key, state),
+            // ...
         }
-        (None, KeyCode::Char('g')) => {
-            keys.pending = Some('g');
+    }
+
+    fn handle_display_normal(&mut self, key: KeyCode, state: &mut AppState) -> Option<Action> {
+        match (self.pending, key) {
+            // Multi-key: gg = go to top
+            (Some('g'), KeyCode::Char('g')) => {
+                self.pending = None;
+                let max = state.display_buffer.len().saturating_sub(1);
+                state.scroll_offset = max;
+                None
+            }
+
+            // First g: wait for second key
+            (None, KeyCode::Char('g')) => {
+                self.pending = Some('g');
+                None
+            }
+
+            // G = go to bottom
+            (_, KeyCode::Char('G')) => {
+                self.pending = None;
+                state.scroll_offset = 0;
+                None
+            }
+
+            // j = scroll down (show newer)
+            (_, KeyCode::Char('j')) => {
+                self.pending = None;
+                state.scroll_offset = state.scroll_offset.saturating_sub(1);
+                None
+            }
+
+            // k = scroll up (show older)
+            (_, KeyCode::Char('k')) => {
+                self.pending = None;
+                state.scroll_offset += 1;
+                None
+            }
+
+            // Ctrl+d = half page down
+            (_, KeyCode::Char('d')) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.pending = None;
+                let half_page = 10; // TODO: calculate from viewport
+                state.scroll_offset = state.scroll_offset.saturating_sub(half_page);
+                None
+            }
+
+            // / = start search
+            (_, KeyCode::Char('/')) => {
+                self.pending = None;
+                self.mode = VimMode::Search;
+                state.search_query.clear();
+                None
+            }
+
+            // i = switch to input box insert mode
+            (_, KeyCode::Char('i')) => {
+                self.pending = None;
+                self.focus = Focus::InputBox;
+                self.mode = VimMode::Insert;
+                None
+            }
+
+            // : = command mode
+            (_, KeyCode::Char(':')) => {
+                self.pending = None;
+                self.mode = VimMode::Command;
+                state.command_input.clear();
+                None
+            }
+
+            // Unknown key: clear pending
+            _ => {
+                self.pending = None;
+                None
+            }
         }
-        (_, KeyCode::Char('G')) => {
-            // Jump to bottom
-            keys.pending = None;
-        }
-        _ => keys.pending = None,
     }
 }
 ```
+
+#### Why a Pending Key State?
+
+Vim has multi-key commands:
+- `gg` = go to top
+- `dd` = delete line
+- `yy` = yank line
+
+When user presses `g`, we don't know yet if they want `gg` (top) or `G` (bottom). We store the `g` as pending and wait for the next key.
+
+Timeout handling (optional): If no second key within 500ms, treat pending key as standalone.
 
 ---
 
 ## Phase 8: Notifications
 
-**Goal:** Display transient notifications.
+**Goal:** Display transient messages to the user.
 
-### Notification Struct
+### Why Notifications?
+
+Users need feedback for:
+- "Connected to GPS"
+- "Config saved"
+- "Script finished"
+- "Error: Port not found"
+
+Notifications appear briefly, then disappear. They don't interrupt workflow.
+
+### Duration Calculation
 
 ```rust
-use std::time::Instant;
-
-#[derive(Debug, Clone)]
-pub enum NotificationLevel {
-    Info,
-    Warning,
-    Error,
-}
-
-#[derive(Debug, Clone)]
-pub struct Notification {
-    pub message: String,
-    pub level: NotificationLevel,
-    pub created_at: Instant,
-    pub duration_secs: f32,
-}
-
 impl Notification {
-    pub fn info(message: impl Into<String>) -> Self {
+    pub fn new(message: impl Into<String>, level: NotificationLevel) -> Self {
         let msg = message.into();
+
+        // Reading speed: ~15 characters per second
+        // Add 1 second buffer for reaction time
         let duration = (msg.len() as f32 / 15.0) + 1.0;
+
         Self {
             message: msg,
-            level: NotificationLevel::Info,
+            level,
             created_at: Instant::now(),
             duration_secs: duration,
         }
     }
-
-    pub fn is_expired(&self) -> bool {
-        self.created_at.elapsed().as_secs_f32() > self.duration_secs
-    }
 }
 ```
 
-### Render at Top-Right
+#### Why Calculate Duration from Length?
+
+Fixed duration is bad:
+- "OK" visible for 5 seconds = wasteful
+- "Error: Connection refused to /dev/ttyUSB0 (permission denied)" visible for 2 seconds = can't read it
+
+Dynamic duration:
+- Short messages = short display
+- Long messages = long display
+- Users can always read the full message
+
+### Stacking Notifications
 
 ```rust
 fn render_notifications(frame: &mut Frame, notifications: &VecDeque<Notification>) {
     let area = frame.area();
     let width = 40;
 
-    for (i, notif) in notifications.iter().enumerate() {
-        if notif.is_expired() { continue; }
-
-        let y = 1 + i as u16;
+    let mut y = 1;
+    for notif in notifications.iter().filter(|n| !n.is_expired()) {
         let x = area.width.saturating_sub(width + 1);
-
         let rect = Rect::new(x, y, width, 1);
+
         let style = match notif.level {
             NotificationLevel::Info => Style::default().fg(Color::Green),
             NotificationLevel::Warning => Style::default().fg(Color::Yellow),
             NotificationLevel::Error => Style::default().fg(Color::Red),
         };
 
-        let para = Paragraph::new(&*notif.message).style(style);
-        frame.render_widget(para, rect);
+        frame.render_widget(Paragraph::new(&*notif.message).style(style), rect);
+        y += 1;
+
+        if y > 5 { break; } // Max 5 visible notifications
     }
 }
 ```
+
+Multiple notifications stack vertically from the top-right. Oldest at top, newest at bottom.
 
 ---
 
 ## Phase 9: Logger Module
 
-**Goal:** Write logs to files.
+**Goal:** Write serial data to log files.
 
-### Log Writer
+### Why Two Log Types?
+
+**Combined log (`all.log`):**
+- All ports interleaved
+- See the full conversation
+- Good for debugging interactions
+
+**Per-port logs (`GPS.log`, `Motor.log`):**
+- Only one port's data
+- Easier to grep/analyze
+- Smaller files
+
+### Async File Writing
 
 ```rust
-use crate::serial::SerialMessage;
-use chrono::Local;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use tokio::sync::broadcast;
-
 pub async fn run_logger(
     mut rx: broadcast::Receiver<SerialMessage>,
     log_dir: PathBuf,
 ) {
-    // Ensure log directory exists
     let _ = tokio::fs::create_dir_all(&log_dir).await;
 
-    // Open combined log
-    let all_log_path = log_dir.join("all.log");
-    let mut all_log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&all_log_path)
-        .await
-        .expect("Failed to open all.log");
-
-    // Per-port logs
+    let all_log = open_log_file(&log_dir.join("all.log")).await;
     let mut port_logs: HashMap<String, File> = HashMap::new();
 
     while let Ok(msg) = rx.recv().await {
@@ -888,206 +1965,297 @@ pub async fn run_logger(
         );
 
         // Write to combined log
-        let _ = all_log.write_all(line.as_bytes()).await;
+        write_line(&all_log, &line).await;
 
-        // Write to per-port log
-        let port_log = port_logs.entry(msg.port_name.clone())
+        // Write to per-port log (create if needed)
+        let port_log = port_logs
+            .entry(msg.port_name.clone())
             .or_insert_with(|| {
                 let path = log_dir.join(format!("{}.log", msg.port_name));
-                futures::executor::block_on(async {
-                    OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(&path)
-                        .await
-                        .expect("Failed to open port log")
-                })
+                // Note: This blocks. In production, use async initialization.
+                futures::executor::block_on(open_log_file(&path))
             });
-        let _ = port_log.write_all(line.as_bytes()).await;
+        write_line(port_log, &line).await;
     }
 }
 ```
+
+#### Why Async File I/O?
+
+Blocking file I/O in async code is bad:
+```rust
+std::fs::write(path, data)?;  // Blocks the entire thread
+```
+
+Tokio's file I/O runs on a thread pool:
+```rust
+tokio::fs::write(path, data).await?;  // Yields while writing
+```
+
+The task yields during I/O, letting other tasks run.
 
 ---
 
 ## Phase 10: Script Engine
 
-**Goal:** Execute .stui scripts.
+**Goal:** Execute `.stui` scripts for automation.
 
-This is the most complex phase. Follow the structure:
+### Why Build a Scripting Language?
 
-### 10.1 Lexer (Tokenizer)
+**Alternative 1: Lua/Python embedding**
+- Pros: Mature, well-documented
+- Cons: Large dependency, complex FFI, security concerns
 
-Converts source text into tokens:
+**Alternative 2: TOML/JSON command lists**
+- Pros: Simple parsing
+- Cons: No variables, no loops, no conditionals
+
+**Alternative 3: Custom language (chosen)**
+- Pros: Tailored to serial automation, small, secure
+- Cons: Must implement from scratch
+
+### The Three Stages
+
 ```
-"let x = 1 + 2;"  →  [Let, Ident("x"), Eq, Number(1), Plus, Number(2), Semi]
+Source Code → [Lexer] → Tokens → [Parser] → AST → [Interpreter] → Execution
 ```
 
-### 10.2 Parser (AST Generator)
+#### Stage 1: Lexer (Tokenizer)
 
-Converts tokens into tree:
+Converts text to tokens:
 ```
-Let { name: "x", value: BinaryOp { left: 1, op: Plus, right: 2 } }
+"let x = 1 + 2;"
+    ↓
+[Let, Ident("x"), Equals, Number(1), Plus, Number(2), Semicolon]
 ```
 
-### 10.3 Interpreter (Executor)
+Why tokens? Parser doesn't care about whitespace, comments, or exact syntax. Tokens are structured data.
 
-Walks the tree and executes:
+#### Stage 2: Parser
+
+Converts tokens to AST (Abstract Syntax Tree):
 ```
-env["x"] = 3
+Let {
+    name: "x",
+    value: BinaryOp {
+        left: Number(1),
+        op: Plus,
+        right: Number(2)
+    }
+}
+```
+
+Why AST? Execution order is explicit. Operator precedence is resolved. Easy to interpret.
+
+#### Stage 3: Interpreter
+
+Walks the AST and executes:
+```rust
+fn eval_stmt(&mut self, stmt: Stmt) -> Result<()> {
+    match stmt {
+        Stmt::Let { name, value } => {
+            let val = self.eval_expr(value)?;
+            self.env.insert(name, val);
+        }
+        Stmt::If { cond, then_block, else_block } => {
+            if self.eval_expr(cond)?.is_truthy() {
+                self.eval_block(then_block)?;
+            } else if let Some(block) = else_block {
+                self.eval_block(block)?;
+            }
+        }
+        // ...
+    }
+    Ok(())
+}
 ```
 
 ### Built-in Functions
 
-| Function | Behavior |
-|----------|----------|
-| `sendstr(ports, text)` | Send `SerialCommand::Send` |
-| `sendbin(ports, hex)` | Parse hex, send as bytes |
-| `wait(secs)` | `tokio::time::sleep` |
-| `waitstr(ports, regex, timeout)` | Subscribe to broadcast, match with timeout |
+```rust
+async fn call_builtin(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
+    match name {
+        "sendstr" => {
+            let ports = args[0].as_string_array()?;
+            let text = args[1].as_string()?;
+            self.serial_tx.send(SerialCommand::Send {
+                port_names: ports,
+                data: text.into_bytes(),
+            }).await?;
+            Ok(Value::Null)
+        }
 
-### Script Execution Flow
+        "wait" => {
+            let secs = args[0].as_number()?;
+            tokio::time::sleep(Duration::from_secs_f64(secs)).await;
+            Ok(Value::Null)
+        }
 
+        "waitstr" => {
+            let ports = args[0].as_string_array()?;
+            let pattern = args[1].as_string()?;
+            let timeout = args[2].as_number()?;
+
+            let regex = Regex::new(&pattern)?;
+            let mut rx = self.serial_broadcast.subscribe();
+
+            let result = tokio::time::timeout(
+                Duration::from_secs_f64(timeout),
+                async {
+                    while let Ok(msg) = rx.recv().await {
+                        if ports.contains(&msg.port_name) && regex.is_match(&msg.data) {
+                            return Some(msg.data);
+                        }
+                    }
+                    None
+                }
+            ).await;
+
+            match result {
+                Ok(Some(data)) => Ok(Value::String(data)),
+                Ok(None) => Err("No match found".into()),
+                Err(_) => Err("Timeout waiting for pattern".into()),
+            }
+        }
+
+        _ => Err(format!("Unknown function: {}", name).into()),
+    }
+}
 ```
-:run script.stui
-       │
-       ▼
-   Load file
-       │
-       ▼
-   Lexer → Tokens
-       │
-       ▼
-   Parser → AST
-       │
-       ▼
-   Interpreter
-       │
-       ├──▶ sendstr() ──▶ serial_cmd_tx
-       ├──▶ wait() ──▶ tokio::time::sleep
-       └──▶ waitstr() ──▶ subscribe broadcast, match regex
+
+#### Why `waitstr` is Powerful
+
+```rust
+// Wait for GPS to respond with OK or ACK within 5 seconds
+waitstr(["GPS"], r"OK|ACK", 5.0);
 ```
 
----
+This single function:
+1. Subscribes to the serial broadcast
+2. Filters for specified ports
+3. Matches with regex
+4. Times out if no match
 
-## Implementation Order (Recommended)
-
-### Week 1-2: Foundation
-1. [ ] Set up Cargo.toml with all dependencies
-2. [ ] Create directory structure and mod.rs files
-3. [ ] Implement error types
-4. [ ] Implement Config module (load/save TOML)
-5. [ ] Verify: Load config, print port names
-
-### Week 3-4: Serial + Basic TUI
-6. [ ] Implement SerialMessage and SerialCommand
-7. [ ] Implement single port read task
-8. [ ] Set up broadcast channel
-9. [ ] Implement basic TUI (display + input)
-10. [ ] Verify: See serial data in TUI
-
-### Week 5-6: Multi-Port + Notifications
-11. [ ] Implement PortManager (multi-port)
-12. [ ] Implement port selector UI
-13. [ ] Implement notification system
-14. [ ] Add connection/disconnection notifications
-15. [ ] Verify: Multiple ports, notifications appear
-
-### Week 7-8: Vim Navigation
-16. [ ] Implement VimMode state machine
-17. [ ] Implement j/k/gg/G navigation
-18. [ ] Implement Ctrl+d/Ctrl+u
-19. [ ] Implement search (/, n, N)
-20. [ ] Implement yank (y, yy)
-21. [ ] Verify: Navigate and search display
-
-### Week 9-10: Config UI + Commands
-22. [ ] Implement config bar (top)
-23. [ ] Implement popups (add port, color picker)
-24. [ ] Implement : commands (:q, :w, :debug, etc.)
-25. [ ] Verify: Add/edit ports via UI
-
-### Week 11-14: Script Engine
-26. [ ] Implement Lexer
-27. [ ] Implement Parser
-28. [ ] Implement Interpreter (basic: let, if, while)
-29. [ ] Implement built-ins (sendstr, wait)
-30. [ ] Implement waitstr with broadcast subscription
-31. [ ] Verify: Run test script
-
-### Week 15+: Polish
-32. [ ] Auto-reconnect with backoff
-33. [ ] Debug screen
-34. [ ] :memory and :thread commands
-35. [ ] Macro system
-36. [ ] Edge cases and performance
+Without it, you'd need complex polling logic.
 
 ---
 
 ## Testing Strategy
 
 ### Unit Tests
-- Config parsing
-- Lexer token generation
-- Parser AST generation
-- Notification timing
 
-### Integration Tests
-- Serial read/write with loopback
-- Channel communication
-- Script execution
-
-### Manual Testing
-- Connect real serial devices
-- Test reconnection (unplug/replug)
-- Test script abort
-
----
-
-## Key Patterns to Remember
-
-### 1. Shared State Pattern
 ```rust
-let state: Arc<Mutex<AppState>> = Arc::new(Mutex::new(AppState::new()));
-```
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-### 2. Task Spawning Pattern
-```rust
-tokio::spawn(async move {
-    // Task code
-});
-```
+    #[test]
+    fn test_lexer() {
+        let tokens = lex("let x = 1;");
+        assert_eq!(tokens, vec![
+            Token::Let,
+            Token::Ident("x".into()),
+            Token::Equals,
+            Token::Number(1.0),
+            Token::Semicolon,
+        ]);
+    }
 
-### 3. Channel Select Pattern
-```rust
-tokio::select! {
-    Some(cmd) = cmd_rx.recv() => { /* handle command */ }
-    Ok(msg) = serial_rx.recv() => { /* handle message */ }
+    #[test]
+    fn test_parser() {
+        let ast = parse("let x = 1 + 2;");
+        // Assert AST structure...
+    }
 }
 ```
 
-### 4. Graceful Shutdown
+### Integration Tests
+
 ```rust
-let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-// In task: while !*shutdown_rx.borrow() { ... }
-// To shutdown: shutdown_tx.send(true);
+#[tokio::test]
+async fn test_serial_broadcast() {
+    let (tx, mut rx1) = broadcast::channel(10);
+    let mut rx2 = tx.subscribe();
+
+    tx.send(SerialMessage { ... }).unwrap();
+
+    assert!(rx1.recv().await.is_ok());
+    assert!(rx2.recv().await.is_ok());
+}
 ```
+
+### Manual Testing
+
+1. **Virtual serial ports**: Use `socat` to create loopback
+   ```bash
+   socat -d -d pty,raw,echo=0 pty,raw,echo=0
+   ```
+
+2. **Real hardware**: Connect actual devices
+
+3. **Stress testing**: Send high-volume data, test reconnection
 
 ---
 
 ## Common Pitfalls
 
-1. **Mutex deadlock**: Don't hold lock across await points
-2. **Broadcast lag**: Receivers can fall behind; handle `RecvError::Lagged`
-3. **Terminal restore**: Always restore terminal on panic (use `ratatui::restore`)
-4. **Port permissions**: May need `sudo` or user group for serial ports
-5. **Blocking in async**: Don't use `std::thread::sleep`, use `tokio::time::sleep`
+### 1. Mutex Deadlock
+
+**Bad:**
+```rust
+let mut guard = state.lock().await;
+some_async_function().await;  // Still holding lock!
+guard.value = 1;
+```
+
+**Good:**
+```rust
+{
+    let mut guard = state.lock().await;
+    guard.value = 1;
+}  // Lock released
+some_async_function().await;
+```
+
+### 2. Broadcast Lag
+
+Receivers can fall behind:
+```rust
+match rx.recv().await {
+    Ok(msg) => { /* handle */ }
+    Err(broadcast::error::RecvError::Lagged(n)) => {
+        eprintln!("Missed {} messages", n);
+    }
+}
+```
+
+### 3. Forgetting Terminal Restore
+
+Always restore, even on panic:
+```rust
+let _guard = scopeguard::guard((), |_| {
+    ratatui::restore();
+});
+```
+
+### 4. Blocking in Async
+
+**Bad:**
+```rust
+std::thread::sleep(Duration::from_secs(1));  // Blocks thread
+```
+
+**Good:**
+```rust
+tokio::time::sleep(Duration::from_secs(1)).await;  // Yields
+```
 
 ---
 
 ## Resources
 
-- [Tokio Tutorial](https://tokio.rs/tokio/tutorial)
-- [Ratatui Book](https://ratatui.rs/)
-- [Crafting Interpreters](https://craftinginterpreters.com/) (for script engine)
-- [tokio-serial Docs](https://docs.rs/tokio-serial/)
+- [Tokio Tutorial](https://tokio.rs/tokio/tutorial) - Async Rust fundamentals
+- [Ratatui Book](https://ratatui.rs/) - TUI framework guide
+- [Crafting Interpreters](https://craftinginterpreters.com/) - Build a scripting language
+- [tokio-serial Docs](https://docs.rs/tokio-serial/) - Serial port API
+- [The Rust Book](https://doc.rust-lang.org/book/) - Rust fundamentals
