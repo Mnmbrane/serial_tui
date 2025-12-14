@@ -58,6 +58,7 @@ SerialTUI is a terminal UI for serial port communication. Think of it as a power
 **Why broadcast channel for serial data?**
 
 Multiple consumers need the same data:
+
 - Display buffer (show on screen)
 - Logger (write to files)
 - Script engine (waitstr matching)
@@ -132,6 +133,7 @@ tracing-subscriber = "0.3"
 #### Why Edition 2024?
 
 Rust 2024 edition includes:
+
 - Improved async ergonomics
 - Better error messages
 - New language features
@@ -183,6 +185,7 @@ src/
 **Separation by domain, not by type.**
 
 Bad structure (by type):
+
 ```
 src/
 ├── structs/
@@ -192,6 +195,7 @@ src/
 ```
 
 Good structure (by domain):
+
 ```
 src/
 ├── serial/      # Everything about serial ports
@@ -252,6 +256,7 @@ pub type Result<T> = std::result::Result<T, AppError>;
 #### Why Custom Error Types?
 
 **Problem with string errors:**
+
 ```rust
 fn load_config() -> Result<Config, String> {
     // Caller can't distinguish between "file not found" and "parse error"
@@ -260,6 +265,7 @@ fn load_config() -> Result<Config, String> {
 ```
 
 **Problem with `Box<dyn Error>`:**
+
 ```rust
 fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
     // Caller can't pattern match on error type
@@ -268,6 +274,7 @@ fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
 ```
 
 **Why enum errors are better:**
+
 ```rust
 fn load_config() -> Result<Config, AppError> {
     // Caller knows exactly what can fail
@@ -286,11 +293,13 @@ Io(#[from] std::io::Error),
 ```
 
 This lets you use `?` operator:
+
 ```rust
 let content = std::fs::read_to_string(path)?;  // io::Error auto-converts to AppError::Io
 ```
 
 Without `#[from]`, you'd need:
+
 ```rust
 let content = std::fs::read_to_string(path).map_err(AppError::Io)?;
 ```
@@ -302,6 +311,7 @@ pub type Result<T> = std::result::Result<T, AppError>;
 ```
 
 Now you can write:
+
 ```rust
 fn load_config() -> Result<Config>  // Instead of Result<Config, AppError>
 ```
@@ -338,6 +348,7 @@ async fn main() -> Result<()> {
 #### Why `#[tokio::main]`?
 
 This macro transforms:
+
 ```rust
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -346,6 +357,7 @@ async fn main() -> Result<()> {
 ```
 
 Into:
+
 ```rust
 fn main() -> Result<()> {
     tokio::runtime::Builder::new_multi_thread()
@@ -363,6 +375,7 @@ It creates the tokio runtime for you. The `multi_thread` variant uses all CPU co
 #### Why `color_eyre::install()`?
 
 This sets up panic and error hooks that:
+
 1. Print colorized error messages
 2. Include backtraces
 3. Show source code context
@@ -537,6 +550,7 @@ if !path.exists() {
 **First-run experience matters.**
 
 If a new user runs the app and gets "Error: config.toml not found", they'll think something is broken. Returning an empty config lets them:
+
 1. See the UI immediately
 2. Add ports through the UI
 3. Save config when ready
@@ -596,12 +610,14 @@ pub use port_config::PortConfig;
 #### Why Re-export?
 
 Without re-exports, external code needs:
+
 ```rust
 use crate::config::manager::Config;
 use crate::config::port_config::PortConfig;
 ```
 
 With re-exports:
+
 ```rust
 use crate::config::{Config, PortConfig};
 ```
@@ -617,6 +633,7 @@ path = "/dev/ttyUSB0"
 ```
 
 Add to main.rs:
+
 ```rust
 let config = config::Config::load(Path::new("config/config.toml"))?;
 println!("Loaded {} ports", config.port.len());
@@ -655,11 +672,13 @@ pub struct SerialMessage {
 #### Why Both `port_name` and `port_path`?
 
 **port_name** is for humans:
+
 - Shown in UI: `[GPS] NMEA: $GPGGA...`
 - Used in log filenames: `GPS.log`
 - Used in scripts: `sendstr(["GPS"], "PING")`
 
 **port_path** is for the system:
+
 - Actual device path: `/dev/ttyUSB0`
 - Needed if you want to reconnect
 - Useful for debugging ("which physical port is GPS?")
@@ -721,6 +740,7 @@ pub enum SerialCommand {
 #### Why an Enum for Commands?
 
 **Alternative: Multiple channels**
+
 ```rust
 let (send_tx, send_rx) = mpsc::channel();      // For send commands
 let (connect_tx, connect_rx) = mpsc::channel(); // For connect commands
@@ -728,16 +748,19 @@ let (disconnect_tx, disconnect_rx) = mpsc::channel(); // For disconnect commands
 ```
 
 Problems:
+
 - Three channels to manage
 - Handler needs `select!` over three receivers
 - Adding new commands means new channels
 
 **Better: Single channel with enum**
+
 ```rust
 let (cmd_tx, cmd_rx) = mpsc::channel::<SerialCommand>();
 ```
 
 Benefits:
+
 - One channel for all commands
 - Adding commands = adding enum variants
 - Pattern matching handles dispatch
@@ -749,6 +772,7 @@ data: Vec<u8>  // Not String
 ```
 
 Serial data can be:
+
 - Text: `"PING\r\n"`
 - Binary: `[0x01, 0x02, 0x03, 0x04]`
 - Mixed: `"DATA:" + [binary payload]`
@@ -844,6 +868,7 @@ async fn connect_and_read(
 When a port disconnects, you want to reconnect. But not too aggressively:
 
 **Without backoff (immediate retry):**
+
 ```
 [GPS] Error: Device not found
 [GPS] Error: Device not found
@@ -854,6 +879,7 @@ When a port disconnects, you want to reconnect. But not too aggressively:
 This wastes CPU and floods logs.
 
 **With exponential backoff:**
+
 ```
 [GPS] Error: Device not found. Reconnecting in 1s...
 [GPS] Error: Device not found. Reconnecting in 2s...
@@ -871,6 +897,7 @@ let mut reader = BufReader::new(port);
 ```
 
 Serial data arrives byte-by-byte. Without buffering:
+
 ```rust
 // Bad: One syscall per byte
 let mut byte = [0u8; 1];
@@ -878,6 +905,7 @@ port.read(&mut byte).await?;
 ```
 
 With `BufReader`:
+
 ```rust
 // Good: Reads chunks, returns lines
 reader.read_line(&mut line).await?;
@@ -888,6 +916,7 @@ reader.read_line(&mut line).await?;
 #### Why `read_line` Returns Line Without Newline?
 
 Actually, `read_line` *includes* the newline. That's why we do:
+
 ```rust
 data: line.trim_end().to_string(),
 ```
@@ -901,6 +930,7 @@ let _ = tx.send(msg);  // Ignore result
 ```
 
 `broadcast::Sender::send` fails if there are no receivers. This is fine:
+
 - At startup, receivers might not exist yet
 - If all receivers disconnect, we still want to keep reading
 
@@ -997,17 +1027,20 @@ pub type SharedState = Arc<Mutex<AppState>>;
 #### Why `Arc<Mutex<T>>`?
 
 Multiple async tasks need to access `AppState`:
+
 - UI task reads it to render
 - Display buffer updater writes new messages
 - Command dispatcher modifies settings
 
 **`Arc`** (Atomic Reference Counted) allows multiple owners:
+
 ```rust
 let state = Arc::new(Mutex::new(AppState::new()));
 let state_clone = state.clone();  // Both point to same data
 ```
 
 **`Mutex`** ensures only one task accesses data at a time:
+
 ```rust
 let mut guard = state.lock().await;  // Waits if another task has the lock
 guard.display_buffer.push_back(msg);
@@ -1034,6 +1067,7 @@ pub display_buffer: VecDeque<SerialMessage>,
 ```
 
 `VecDeque` is a double-ended queue. It's efficient for:
+
 - `push_back`: Add new messages (O(1))
 - `pop_front`: Remove old messages when buffer is full (O(1))
 - Iteration: Render visible portion
@@ -1151,6 +1185,7 @@ let end = total.saturating_sub(state.scroll_offset);
 ```
 
 Think of `scroll_offset` as "how many lines from the bottom are hidden":
+
 - `scroll_offset=0`: Show the newest `height` lines (normal view)
 - `scroll_offset=10`: Hide the 10 newest lines, show older ones
 
@@ -1161,6 +1196,7 @@ This is inverted from typical scrolling but matches vim's `Ctrl+E`/`Ctrl+Y` beha
 #### Why Ratatui's Immediate Mode?
 
 Ratatui uses immediate mode rendering:
+
 ```rust
 loop {
     terminal.draw(|frame| render(frame, &state))?;  // Redraw everything
@@ -1171,11 +1207,13 @@ loop {
 Every frame, you redraw the entire UI from state. There's no "update this widget" API.
 
 **Benefits:**
+
 - Simple mental model (state → UI)
 - No stale widgets
 - Easy to reason about
 
 **Tradeoff:**
+
 - Redraws everything even if nothing changed
 - Fast enough for TUIs (terminals are slow anyway)
 
@@ -1286,6 +1324,7 @@ if event::poll(...)? { ... }
 ```
 
 Holding a lock during I/O (event polling) is bad:
+
 - Other tasks can't access state while we wait for input
 - Can cause deadlocks if another task needs the lock
 
@@ -1302,6 +1341,7 @@ event::poll(Duration::from_millis(16))?
 - **If no input**: Returns after 16ms, loops back to render
 
 This balances responsiveness with CPU usage. Without timeout, you'd either:
+
 - Block forever waiting for input (UI doesn't update)
 - Spin in a tight loop (100% CPU)
 
@@ -1312,6 +1352,7 @@ if key.kind == KeyEventKind::Press {
 ```
 
 Terminals can report:
+
 - `Press`: Key pressed down
 - `Release`: Key released
 - `Repeat`: Key held down (auto-repeat)
@@ -1327,17 +1368,20 @@ ratatui::restore();  // MUST call this
 ```
 
 `ratatui::init()` puts the terminal in "raw mode":
+
 - No line buffering
 - No echo
 - No Ctrl+C handling
 - Alternate screen (hides previous content)
 
 If you don't call `restore()`:
+
 - Terminal stays in raw mode
 - User can't type normally
 - Previous screen content is lost
 
 Even on panic, you want to restore. Consider using a guard:
+
 ```rust
 struct TerminalGuard;
 impl Drop for TerminalGuard {
@@ -1455,16 +1499,19 @@ pub enum AppCommand {
 #### Why Separate AppCommand from SerialCommand?
 
 **AppCommand** is high-level, user-facing:
+
 - "Send this text to selected ports"
 - "Run this script"
 - "Quit the app"
 
 **SerialCommand** is low-level, implementation:
+
 - "Send these bytes to these ports"
 - "Connect this port"
 - "Disconnect this port"
 
 The command dispatcher translates between them:
+
 ```rust
 AppCommand::SendText { ports, text } => {
     let bytes = (text + &line_ending).into_bytes();
@@ -1473,6 +1520,7 @@ AppCommand::SendText { ports, text } => {
 ```
 
 This separation means:
+
 - UI doesn't know about line endings
 - UI doesn't know about byte encoding
 - Serial handler doesn't know about "scripts" or "quit"
@@ -1529,6 +1577,7 @@ pub async fn run_command_dispatcher(
 #### Why Not Just Handle Commands in the UI Task?
 
 **Problems with handling commands in UI:**
+
 ```rust
 // In UI task
 match key.code {
@@ -1544,6 +1593,7 @@ match key.code {
 - Complex logic clutters UI code
 
 **Benefits of dispatcher:**
+
 - UI just sends AppCommand and continues
 - Dispatcher handles translation, error handling, notifications
 - Easier to test dispatcher in isolation
@@ -1597,6 +1647,7 @@ let (write_tx, write_rx) = mpsc::channel(100);
 ```
 
 When `SerialCommand::Send { port_names: ["GPS", "Motor"], data }` arrives:
+
 ```rust
 for name in port_names {
     if let Some(handle) = self.ports.get(&name) {
@@ -1668,10 +1719,12 @@ async fn connect_and_run(
 #### Why `tokio::select!`?
 
 We need to simultaneously:
+
 - Read from the serial port (blocking until data arrives)
 - Write to the serial port (blocking until write channel has data)
 
 `select!` waits for whichever happens first:
+
 ```rust
 tokio::select! {
     result = reader.read_line(&mut line) => { /* handle read */ }
@@ -1730,6 +1783,7 @@ pub enum Focus {
 **Focus** = which widget receives input
 
 Examples:
+
 - Focus=Display, Mode=Normal: j/k scroll display
 - Focus=Display, Mode=Search: typing goes to search box
 - Focus=InputBox, Mode=Normal: h/l move cursor in input
@@ -1842,6 +1896,7 @@ impl KeyState {
 #### Why a Pending Key State?
 
 Vim has multi-key commands:
+
 - `gg` = go to top
 - `dd` = delete line
 - `yy` = yank line
@@ -1859,6 +1914,7 @@ Timeout handling (optional): If no second key within 500ms, treat pending key as
 ### Why Notifications?
 
 Users need feedback for:
+
 - "Connected to GPS"
 - "Config saved"
 - "Script finished"
@@ -1890,10 +1946,12 @@ impl Notification {
 #### Why Calculate Duration from Length?
 
 Fixed duration is bad:
+
 - "OK" visible for 5 seconds = wasteful
 - "Error: Connection refused to /dev/ttyUSB0 (permission denied)" visible for 2 seconds = can't read it
 
 Dynamic duration:
+
 - Short messages = short display
 - Long messages = long display
 - Users can always read the full message
@@ -1935,11 +1993,13 @@ Multiple notifications stack vertically from the top-right. Oldest at top, newes
 ### Why Two Log Types?
 
 **Combined log (`all.log`):**
+
 - All ports interleaved
 - See the full conversation
 - Good for debugging interactions
 
 **Per-port logs (`GPS.log`, `Motor.log`):**
+
 - Only one port's data
 - Easier to grep/analyze
 - Smaller files
@@ -1983,11 +2043,13 @@ pub async fn run_logger(
 #### Why Async File I/O?
 
 Blocking file I/O in async code is bad:
+
 ```rust
 std::fs::write(path, data)?;  // Blocks the entire thread
 ```
 
 Tokio's file I/O runs on a thread pool:
+
 ```rust
 tokio::fs::write(path, data).await?;  // Yields while writing
 ```
@@ -2003,14 +2065,17 @@ The task yields during I/O, letting other tasks run.
 ### Why Build a Scripting Language?
 
 **Alternative 1: Lua/Python embedding**
+
 - Pros: Mature, well-documented
 - Cons: Large dependency, complex FFI, security concerns
 
 **Alternative 2: TOML/JSON command lists**
+
 - Pros: Simple parsing
 - Cons: No variables, no loops, no conditionals
 
 **Alternative 3: Custom language (chosen)**
+
 - Pros: Tailored to serial automation, small, secure
 - Cons: Must implement from scratch
 
@@ -2023,6 +2088,7 @@ Source Code → [Lexer] → Tokens → [Parser] → AST → [Interpreter] → Ex
 #### Stage 1: Lexer (Tokenizer)
 
 Converts text to tokens:
+
 ```
 "let x = 1 + 2;"
     ↓
@@ -2034,6 +2100,7 @@ Why tokens? Parser doesn't care about whitespace, comments, or exact syntax. Tok
 #### Stage 2: Parser
 
 Converts tokens to AST (Abstract Syntax Tree):
+
 ```
 Let {
     name: "x",
@@ -2050,6 +2117,7 @@ Why AST? Execution order is explicit. Operator precedence is resolved. Easy to i
 #### Stage 3: Interpreter
 
 Walks the AST and executes:
+
 ```rust
 fn eval_stmt(&mut self, stmt: Stmt) -> Result<()> {
     match stmt {
@@ -2131,6 +2199,7 @@ waitstr(["GPS"], r"OK|ACK", 5.0);
 ```
 
 This single function:
+
 1. Subscribes to the serial broadcast
 2. Filters for specified ports
 3. Matches with regex
@@ -2187,6 +2256,7 @@ async fn test_serial_broadcast() {
 ### Manual Testing
 
 1. **Virtual serial ports**: Use `socat` to create loopback
+
    ```bash
    socat -d -d pty,raw,echo=0 pty,raw,echo=0
    ```
@@ -2202,6 +2272,7 @@ async fn test_serial_broadcast() {
 ### 1. Mutex Deadlock
 
 **Bad:**
+
 ```rust
 let mut guard = state.lock().await;
 some_async_function().await;  // Still holding lock!
@@ -2209,6 +2280,7 @@ guard.value = 1;
 ```
 
 **Good:**
+
 ```rust
 {
     let mut guard = state.lock().await;
@@ -2220,6 +2292,7 @@ some_async_function().await;
 ### 2. Broadcast Lag
 
 Receivers can fall behind:
+
 ```rust
 match rx.recv().await {
     Ok(msg) => { /* handle */ }
@@ -2232,6 +2305,7 @@ match rx.recv().await {
 ### 3. Forgetting Terminal Restore
 
 Always restore, even on panic:
+
 ```rust
 let _guard = scopeguard::guard((), |_| {
     ratatui::restore();
@@ -2241,11 +2315,13 @@ let _guard = scopeguard::guard((), |_| {
 ### 4. Blocking in Async
 
 **Bad:**
+
 ```rust
 std::thread::sleep(Duration::from_secs(1));  // Blocks thread
 ```
 
 **Good:**
+
 ```rust
 tokio::time::sleep(Duration::from_secs(1)).await;  // Yields
 ```
