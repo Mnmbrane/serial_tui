@@ -5,6 +5,9 @@
 ### Foundation
 
 - [ ] Project setup (Cargo.toml, directory structure, mod.rs files)
+  - [x] Cargo.toml
+  - [ ] directory structure
+  - [ ] mod.rs files
 - [ ] Error handling setup (color-eyre, thiserror, custom error types)
 - [ ] Basic main.rs with tokio runtime
 

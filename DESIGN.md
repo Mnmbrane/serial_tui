@@ -24,7 +24,7 @@ A step-by-step guide to building SerialTUI from scratch, with explanations for e
 
 ### What We're Building
 
-SerialTUI is a terminal UI for serial port communication. Think of it as a powerful replacement for tools like `minicom`, `screen`, or PuTTY's serial console, but with:
+SerialTUI is a terminal UI for serial port communication. Think of it as a powerful replacement for tools like `teraterm`, or PuTTY's serial console, but with:
 
 - Multiple ports at once (up to 255)
 - Vim-style keyboard navigation

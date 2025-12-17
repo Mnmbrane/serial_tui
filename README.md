@@ -23,7 +23,7 @@ cargo build --release
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ [Port v] [Filter v] [Add Port] [Run Script v]          Connected   │
+│ [Port v] [Filter v] [Add Port] [Run Script v]          Connected    │
 ├─────────────────────────────────────────────────────────────────────┤
 │ <14:32:01.123>[GPS] NMEA: $GPGGA,123456.00,4807.038,N...            │
 │ <14:32:01.456>[Motor] RPM: 1500, Temp: 45C                          │
