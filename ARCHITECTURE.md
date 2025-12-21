@@ -113,6 +113,7 @@ PSEUDOCODE: run_port_task(config, broadcast_tx, write_rx)
                         msg = SerialMessage {
                             timestamp: now(),
                             port_name: config.name,
+                            port_path: config.path,
                             data: line
                         }
                         broadcast_tx.send(msg)
@@ -348,8 +349,12 @@ color       : String       // hex color for UI
 port_configs   : Map<name, PortConfig>
 display_buffer : Queue<SerialMessage>   // capped at 10000
 notifications  : Queue<Notification>
+selected_ports : Set<String>            // ports to send to
 scroll_offset  : usize
+cursor_line    : usize                  // selected line in display
 input_text     : String
+input_cursor   : usize                  // cursor position in input
+search_query   : String
 vim_mode       : VimMode
 focus          : Focus
 running        : bool
