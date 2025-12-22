@@ -484,6 +484,4 @@ On success: reset to 1s
 | chrono | Timestamps |
 | regex | Search + waitstr |
 | arboard | Clipboard |
-| thiserror | Error types |
-| color-eyre | Error display |
 | rand | Random colors |
