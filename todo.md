@@ -5,13 +5,12 @@
 ### Foundation
 
 - [x] Project setup
-  - [x] Cargo.toml
-  - [x] directory structure
 - [ ] Basic main.rs with tokio runtime
 
 ### Config Module
 
-- [ ] Define `PortConfig` struct with serde
+- [x] Define `PortConfig` struct
+- [ ] Add serde capabilities
 - [ ] Define `DefaultsConfig` struct (default port settings)
 - [ ] Define `MacroConfig` struct (name, key, command)
 - [ ] Config file parser (load config/config.toml)

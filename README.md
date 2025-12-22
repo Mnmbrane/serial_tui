@@ -35,6 +35,7 @@ cargo build --release
 ## Configuration
 
 `config/config.toml`:
+
 ```toml
 [[port]]
 name = "GPS"
@@ -46,6 +47,7 @@ color = "#FF5733"
 ## Scripting
 
 `scripts/test.stui`:
+
 ```
 sendstr(["GPS"], "PING\n")
 wait(0.5)

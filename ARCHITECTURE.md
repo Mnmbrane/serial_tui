@@ -313,12 +313,12 @@ PSEUDOCODE: interpret(ast, env, serial_tx, broadcast_rx)
 
 ### Built-in Functions
 
-| Function | Description | Example |
-|----------|-------------|---------|
-| `sendstr(ports, text)` | Send string | `sendstr(["GPS"], "PING\n")` |
-| `sendbin(ports, hex)` | Send binary | `sendbin(["Motor"], "0x01020304")` |
-| `wait(seconds)` | Pause | `wait(0.5)` |
-| `waitstr(ports, regex, timeout)` | Wait for pattern | `waitstr(["GPS"], r"OK\|ACK", 5.0)` |
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `sendstr(ports, text)` | - | Send string to ports |
+| `sendbin(ports, hex)` | - | Send binary data (hex string) |
+| `wait(seconds)` | - | Pause execution |
+| `waitstr(ports, regex, timeout)` | bool | Wait for pattern, true if matched before timeout |
 
 ---
 
@@ -333,14 +333,30 @@ port_path   : String       // system path ("/dev/ttyUSB0")
 data        : String       // line content (no newline)
 ```
 
+### DefaultsConfig
+
+```
+baud_rate     115200
+data_bits     8
+stop_bits     1
+parity        none
+flow_control  none
+line_ending   "\n"
+color         green
+```
+
 ### PortConfig
 
 ```
-name        : String       // unique display name
-path        : String       // unique system path
-baud_rate   : u32          // default: 115200
-line_ending : String       // default: "\n"
-color       : String       // hex color for UI
+name          : String           // required, unique
+path          : String           // required, unique
+baud_rate     : Option<u32>      // falls back to defaults
+data_bits     : Option<u8>
+stop_bits     : Option<u8>
+parity        : Option<String>
+flow_control  : Option<String>
+line_ending   : Option<String>
+color         : Option<String>   // random if not specified
 ```
 
 ### AppState
@@ -367,17 +383,26 @@ running        : bool
 ### config/config.toml
 
 ```toml
+[defaults]
+baud_rate = 115200
+data_bits = 8
+stop_bits = 1
+parity = "none"
+flow_control = "none"
+line_ending = "\n"
+
 [[port]]
 name = "GPS"
 path = "/dev/ttyUSB0"
-baud_rate = 115200
 color = "#FF5733"
+# uses all defaults
 
 [[port]]
 name = "Motor"
 path = "/dev/ttyUSB1"
 baud_rate = 9600
 line_ending = "\r\n"
+flow_control = "hardware"
 ```
 
 ### config/macros.toml
