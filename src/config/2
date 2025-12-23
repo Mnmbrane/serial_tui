@@ -1,44 +1,93 @@
 use std::path::PathBuf;
 
+use crate::config::ConfigError;
+
 use serde::{Deserialize, Serialize};
 
+const fn default_baud_rate() -> u32 {
+    115200
+}
+
+const fn default_data_bits() -> u8 {
+    8
+}
+
+const fn default_stop_bits() -> u8 {
+    1
+}
+
+fn default_parity() -> String {
+    "none".to_string()
+}
+
+fn default_flow_control() -> String {
+    "none".to_string()
+}
+
+fn default_line_ending() -> String {
+    "\n".to_string()
+}
+
+fn default_color() -> String {
+    "green".to_string()
+}
+
 #[derive(Serialize, Deserialize)]
-#[serde(default)]
 pub struct PortConfig {
     name: String,
     path: PathBuf,
+
+    #[serde(default = "default_baud_rate")]
     baud_rate: u32,
+    #[serde(default = "default_data_bits")]
     data_bits: u8,
+    #[serde(default = "default_stop_bits")]
     stop_bits: u8,
+    #[serde(default = "default_parity")]
     parity: String,
+    #[serde(default = "default_flow_control")]
     flow_control: String,
+    #[serde(default = "default_line_ending")]
     line_ending: String,
+    #[serde(default = "default_color")]
     color: String,
 }
 
-impl Default for PortConfig {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            path: PathBuf::new(),
-            baud_rate: 115200,
-            data_bits: 8,
-            stop_bits: 1,
-            parity: "none".into(),
-            flow_control: "none".into(),
-            line_ending: "\n".into(),
-            color: "green".into(),
-        }
-    }
-}
-
 impl PortConfig {
-    pub fn new(name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
-        Self {
-            name: name.into(),
-            path: path.into(),
-            ..Default::default()
-        }
+    pub fn new(name: Option<String>, path: Option<PathBuf>) -> Result<Self, ConfigError> {
+
+        let name = if let Some(com_name) = name {
+            let com_name = com_name.trim();
+            if com_name.is_empty() {
+                return Err(ConfigError::MissingName);
+            }
+            else {
+                com_name.to_string()
+            }
+
+        } else {
+            return Err(ConfigError::MissingName);
+        };
+
+        let path = if let Some(path_name) = path {
+            path_name
+        } else {
+            return Err(ConfigError::MissingPath);
+        };
+
+
+
+        Ok(Self {
+            name,
+            path,
+            baud_rate: default_baud_rate(),
+            data_bits: default_data_bits(),
+            stop_bits: default_stop_bits(),
+            parity: default_parity(),
+            flow_control: default_flow_control(),
+            line_ending: default_line_ending(),
+            color: default_color(),
+        })
     }
     pub fn baud_rate(mut self, baud_rate: u32) -> Self {
         self.baud_rate = baud_rate;
@@ -74,6 +123,8 @@ impl PortConfig {
         self.color = color;
         self
     }
+
+    pub fn from_toml(toml_str: &str)
 }
 
 #[cfg(test)] // Only compiels the module during testing
@@ -82,9 +133,9 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let port_config: PortConfig = PortConfig::new("COM1", "/dev/tty14");
+        let port_config: PortConfig = PortConfig::new("COM1".to_string(), "/dev/tty14".to_string());
         assert_eq!(port_config.name, "COM1");
-        assert_eq!(port_config.path, PathBuf::from("/dev/tty14"));
+        assert_eq!(port_config.path, "/dev/tty14");
         assert_eq!(port_config.baud_rate, 115200);
         assert_eq!(port_config.data_bits, 8);
         assert_eq!(port_config.stop_bits, 1);
@@ -95,24 +146,24 @@ mod tests {
     }
     #[test]
     fn test_diff_baud_and_le() {
-        let port_config: PortConfig = PortConfig::new("COM2", "/dev/tty15")
+        let port_config: PortConfig = PortConfig::new("COM2".to_string(), "/dev/tty15".to_string())
             .baud_rate(9600)
             .line_ending("\r\n".to_string());
         assert_eq!(port_config.name, "COM2");
-        assert_eq!(port_config.path, PathBuf::from("/dev/tty15"));
+        assert_eq!(port_config.path, "/dev/tty15");
         assert_eq!(port_config.baud_rate, 9600);
         assert_eq!(port_config.line_ending, "\r\n");
     }
     #[test]
     fn test_builder() {
-        let port_config: PortConfig =
+        let mut port_config: PortConfig =
             PortConfig::new("COM3".to_string(), "/dev/ttyACM0".to_string())
                 .baud_rate(9600)
                 .data_bits(7)
                 .stop_bits(0)
                 .parity("rand".to_string());
         assert_eq!(port_config.name, "COM3");
-        assert_eq!(port_config.path, PathBuf::from("/dev/ttyACM0"));
+        assert_eq!(port_config.path, "/dev/ttyACM0");
         assert_eq!(port_config.baud_rate, 9600);
         assert_eq!(port_config.data_bits, 7);
         assert_eq!(port_config.stop_bits, 0);
