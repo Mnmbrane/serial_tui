@@ -76,6 +76,7 @@ impl PortConfig {
     }
 }
 
+// Unit tests
 #[cfg(test)] // Only compiels the module during testing
 mod tests {
     use super::*;

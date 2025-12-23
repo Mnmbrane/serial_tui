@@ -10,7 +10,7 @@
 ### Config Module
 
 - [x] Define `PortConfig` struct
-- [ ] Add serde capabilities
+- [x] Add serde capabilities
 - [ ] Define `DefaultsConfig` struct (default port settings)
 - [ ] Define `MacroConfig` struct (name, key, command)
 - [ ] Config file parser (load config/config.toml)
