@@ -11,9 +11,11 @@
 
 - [x] Define `PortConfig` struct
 - [x] Add serde capabilities
-- [ ] Define `DefaultsConfig` struct (default port settings)
+- [x] Define PortConfig struct
 - [ ] Define `MacroConfig` struct (name, key, command)
+      * Do later when we try UI
 - [ ] Config file parser (load config/config.toml)
+      * L
 - [ ] Config validation (unique names/paths, notify on error)
 - [ ] Config save functionality
 - [ ] Default value generation (random unique colors)

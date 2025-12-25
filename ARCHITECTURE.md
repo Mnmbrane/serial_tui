@@ -383,14 +383,6 @@ running        : bool
 ### config/config.toml
 
 ```toml
-[defaults]
-baud_rate = 115200
-data_bits = 8
-stop_bits = 1
-parity = "none"
-flow_control = "none"
-line_ending = "\n"
-
 [[port]]
 name = "GPS"
 path = "/dev/ttyUSB0"
