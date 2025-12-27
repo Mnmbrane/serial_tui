@@ -20,6 +20,10 @@ use app_state::AppState;
 use error::AppError;
 
 fn main() -> Result<(), AppError> {
-    let app_state = AppState::new("ports.toml")?;
+    let app_state = AppState::new().inspect_err(|e| println!("Failed to new {e}"))?;
+    app_state
+        .init()
+        .map_err(|e| println!("Failed to load {e}"))
+        .unwrap();
     Ok(())
 }
