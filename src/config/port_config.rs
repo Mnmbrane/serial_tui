@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct PortConfig {
-    name: String,
     path: PathBuf,
     baud_rate: u32,
     data_bits: u8,
@@ -19,7 +18,6 @@ pub struct PortConfig {
 impl Default for PortConfig {
     fn default() -> Self {
         Self {
-            name: String::new(),
             path: PathBuf::new(),
             baud_rate: 115200,
             data_bits: 8,
@@ -33,9 +31,8 @@ impl Default for PortConfig {
 }
 
 impl PortConfig {
-    pub fn new(name: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+    pub fn new(path: impl Into<PathBuf>) -> Self {
         Self {
-            name: name.into(),
             path: path.into(),
             ..Default::default()
         }
@@ -83,8 +80,7 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let port_config: PortConfig = PortConfig::new("COM1", "/dev/tty14");
-        assert_eq!(port_config.name, "COM1");
+        let port_config: PortConfig = PortConfig::new("/dev/tty14");
         assert_eq!(port_config.path, PathBuf::from("/dev/tty14"));
         assert_eq!(port_config.baud_rate, 115200);
         assert_eq!(port_config.data_bits, 8);
@@ -96,23 +92,20 @@ mod tests {
     }
     #[test]
     fn test_diff_baud_and_le() {
-        let port_config: PortConfig = PortConfig::new("COM2", "/dev/tty15")
+        let port_config: PortConfig = PortConfig::new("/dev/tty15")
             .baud_rate(9600)
             .line_ending("\r\n".to_string());
-        assert_eq!(port_config.name, "COM2");
         assert_eq!(port_config.path, PathBuf::from("/dev/tty15"));
         assert_eq!(port_config.baud_rate, 9600);
         assert_eq!(port_config.line_ending, "\r\n");
     }
     #[test]
     fn test_builder() {
-        let port_config: PortConfig =
-            PortConfig::new("COM3".to_string(), "/dev/ttyACM0".to_string())
-                .baud_rate(9600)
-                .data_bits(7)
-                .stop_bits(0)
-                .parity("rand".to_string());
-        assert_eq!(port_config.name, "COM3");
+        let port_config: PortConfig = PortConfig::new("/dev/ttyACM0".to_string())
+            .baud_rate(9600)
+            .data_bits(7)
+            .stop_bits(0)
+            .parity("rand".to_string());
         assert_eq!(port_config.path, PathBuf::from("/dev/ttyACM0"));
         assert_eq!(port_config.baud_rate, 9600);
         assert_eq!(port_config.data_bits, 7);

@@ -14,8 +14,8 @@
 - [x] Define PortConfig struct
 - [ ] Define `MacroConfig` struct (name, key, command)
       * Do later when we try UI
-- [ ] Config file parser (load config/config.toml)
-      * L
+- [x] Config file parser (load config/config.toml)
+      * Just use io read/write and toml to parse
 - [ ] Config validation (unique names/paths, notify on error)
 - [ ] Config save functionality
 - [ ] Default value generation (random unique colors)

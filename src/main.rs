@@ -12,10 +12,14 @@
 //! ## Shutdown
 //! All tasks receive shutdown signal via channel close or AppState.running flag.
 
+mod app_state;
 mod config;
+mod error;
 
-use config::port_config;
+use app_state::AppState;
+use error::AppError;
 
-fn main() {
-    print!("Hello World");
+fn main() -> Result<(), AppError> {
+    let app_state = AppState::new("ports.toml")?;
+    Ok(())
 }
