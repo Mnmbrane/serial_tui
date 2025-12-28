@@ -24,6 +24,7 @@ impl AppConfig {
     }
 
     pub fn init(&mut self, cfg: &str) -> Result<(), AppError> {
+        println!("{cfg}");
         self.port_config = toml::from_str(cfg)?;
         Ok(())
     }

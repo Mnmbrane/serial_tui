@@ -16,12 +16,19 @@ mod app_state;
 mod config;
 mod error;
 
+use std::fs::{self};
+
 use app_state::AppState;
 use error::AppError;
 
+const PORT_CONFIG_PATH: &'static str = "config/ports.toml";
+
 fn main() -> Result<(), AppError> {
     let app_state = AppState::new().inspect_err(|e| eprintln!("{e}"))?;
-    app_state.init().map_err(|e| eprintln!("{e}")).unwrap();
+    app_state
+        .configure(PORT_CONFIG_PATH)
+        .map_err(|e| eprintln!("{e}"))
+        .unwrap();
 
     // Read the config
 

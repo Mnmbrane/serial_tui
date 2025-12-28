@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum LineEnding {
     None,
     #[default]
@@ -21,8 +21,9 @@ impl From<&str> for LineEnding {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum DataBits {
+    None,
     Five,
     Six,
     Seven,
@@ -30,14 +31,26 @@ pub enum DataBits {
     Eight,
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
+impl From<u8> for DataBits {
+    fn from(value: u8) -> Self {
+        match value {
+            5 => DataBits::Five,
+            6 => DataBits::Six,
+            7 => DataBits::Seven,
+            8 => DataBits::Eight,
+            _ => DataBits::None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum StopBits {
     #[default]
     One,
     Two,
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum Parity {
     #[default]
     None,
@@ -45,7 +58,7 @@ pub enum Parity {
     Even,
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum FlowControl {
     #[default]
     None,
@@ -53,7 +66,7 @@ pub enum FlowControl {
     Hardware,
 }
 
-#[derive(Serialize, Deserialize, Default, PartialEq, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum Color {
     #[default]
     Reset,
@@ -86,7 +99,7 @@ pub enum Color {
 pub struct PortConfig {
     pub path: PathBuf,
     pub baud_rate: u32,
-    pub data_bits: DataBits,
+    pub data_bits: Option<DataBits>,
     pub stop_bits: StopBits,
     pub parity: Parity,
     pub flow_control: FlowControl,
@@ -99,7 +112,7 @@ impl Default for PortConfig {
         Self {
             path: PathBuf::new(),
             baud_rate: 115_200,
-            data_bits: DataBits::default(),
+            data_bits: Some(DataBits::default()),
             stop_bits: StopBits::default(),
             parity: Parity::default(),
             flow_control: FlowControl::default(),
@@ -122,7 +135,7 @@ mod tests {
             PortConfig {
                 path: PathBuf::new(),
                 baud_rate: 115_200,
-                data_bits: DataBits::Eight,
+                data_bits: Some(DataBits::Eight),
                 stop_bits: StopBits::One,
                 parity: Parity::None,
                 flow_control: FlowControl::None,
