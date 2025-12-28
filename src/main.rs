@@ -22,5 +22,14 @@ use error::AppError;
 fn main() -> Result<(), AppError> {
     let app_state = AppState::new().inspect_err(|e| eprintln!("{e}"))?;
     app_state.init().map_err(|e| eprintln!("{e}")).unwrap();
+
+    // Read the config
+
+    // Start the serial readers and writers
+
+    // Start logger
+
+    // Start the UI
+
     Ok(())
 }
