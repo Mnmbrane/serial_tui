@@ -23,4 +23,4 @@ baud_rate = 9600
 [ACM0]
 path = "/dev/ttyACM0"
 baud_rate = 115200
-color = "blue"
+color = "#FF5500"

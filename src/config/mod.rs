@@ -24,7 +24,6 @@ impl AppConfig {
     }
 
     pub fn init(&mut self, cfg: &str) -> Result<(), AppError> {
-        println!("{cfg}");
         self.port_config = toml::from_str(cfg)?;
         Ok(())
     }
@@ -32,27 +31,47 @@ impl AppConfig {
 
 #[cfg(test)]
 mod test {
-    use std::{path::PathBuf, str::FromStr};
+
+    use crate::config::port_config::Color;
 
     use super::*;
 
     #[test]
     fn test_port_cfg() {
-        let toml_str = r#"
-  [COM1]
-  path = "/dev/ttyUSB0"
-  baud_rate = 9600
+        let toml_str = r##"
+            [USB0]
+            path = "/dev/ttyUSB0"
+            baud_rate = 115200
+            data_bits = 8
+            stop_bits = 1
+            parity = "none"
+            flow_control = "none"
+            line_ending = "\n"
+            color = "green"
 
-  [COM2]
-  path = "/dev/ttyUSB1"
-  "#;
+            [USB1]
+            path = "/dev/ttyUSB1"
+            baud_rate = 9600
+
+            [ACM0]
+            path = "/dev/ttyACM0"
+            baud_rate = 115200
+            color = "#FF5500"
+"##;
         let mut app_config: AppConfig = AppConfig::new();
         app_config.init(toml_str).unwrap();
-        assert_eq!(app_config.port_config.len(), 2);
-        assert_eq!(app_config.port_config.get("COM1").unwrap().baud_rate, 9600);
+        assert_eq!(app_config.port_config.len(), 3);
         assert_eq!(
-            app_config.port_config.get("COM2").unwrap().path,
-            PathBuf::from_str("/dev/ttyUSB1").unwrap()
+            app_config.port_config.get("USB0").unwrap().baud_rate,
+            Some(115200)
+        );
+        assert_eq!(
+            app_config.port_config.get("ACM0").unwrap().color,
+            Some(Color::Rgb {
+                r: 255,
+                g: 85,
+                b: 0,
+            })
         );
     }
 }
