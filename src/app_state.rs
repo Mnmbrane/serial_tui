@@ -13,8 +13,10 @@ impl AppState {
     }
 
     pub fn configure(mut self, port_cfg_path: &str) -> Result<(), AppError> {
-        // read config file
+        // read config file for ports
         let cfg = fs::read_to_string(port_cfg_path)?;
+
+        // TODO: Macro config
 
         self.config.init(cfg.as_str())?;
 

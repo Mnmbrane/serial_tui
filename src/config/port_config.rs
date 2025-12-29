@@ -14,12 +14,12 @@ impl TryFrom<String> for LineEnding {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
-            "\n" => Ok(LineEnding::LF),
-            "\r" => Ok(LineEnding::CR),
-            "\r\n" => Ok(LineEnding::CRLF),
+        match value.to_lowercase().as_str() {
+            "lf" | "\n" => Ok(LineEnding::LF),
+            "cr" | "\r" => Ok(LineEnding::CR),
+            "crlf" | "\r\n" => Ok(LineEnding::CRLF),
             e => Err(format!(
-                "Unable to parse line ending {e}, must be \"\\n\", \"\\r\" or \"\\r\\n\"."
+                "Unable to parse line ending {e}, must be \"\\n\", \"\\r\", \"\\r\\n\", \"lf\", \"cr\", or \"crlf\"."
             )),
         }
     }
@@ -194,26 +194,26 @@ impl TryFrom<String> for Color {
 #[serde(default)]
 pub struct PortConfig {
     pub path: PathBuf,
-    pub baud_rate: Option<u32>,
-    pub data_bits: Option<DataBits>,
-    pub stop_bits: Option<StopBits>,
-    pub parity: Option<Parity>,
-    pub flow_control: Option<FlowControl>,
-    pub line_ending: Option<LineEnding>,
-    pub color: Option<Color>,
+    pub baud_rate: u32,
+    pub data_bits: DataBits,
+    pub stop_bits: StopBits,
+    pub parity: Parity,
+    pub flow_control: FlowControl,
+    pub line_ending: LineEnding,
+    pub color: Color,
 }
 
 impl Default for PortConfig {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
-            baud_rate: Some(115_200),
-            data_bits: Some(DataBits::default()),
-            stop_bits: Some(StopBits::default()),
-            parity: Some(Parity::default()),
-            flow_control: Some(FlowControl::default()),
-            line_ending: Some(LineEnding::default()),
-            color: Some(Color::default()),
+            baud_rate: 115_200,
+            data_bits: DataBits::default(),
+            stop_bits: StopBits::default(),
+            parity: Parity::default(),
+            flow_control: FlowControl::default(),
+            line_ending: LineEnding::default(),
+            color: Color::default(),
         }
     }
 }
@@ -230,13 +230,13 @@ mod tests {
             port_config,
             PortConfig {
                 path: PathBuf::new(),
-                baud_rate: Some(115_200),
-                data_bits: Some(DataBits::Eight),
-                stop_bits: Some(StopBits::One),
-                parity: Some(Parity::None),
-                flow_control: Some(FlowControl::None),
-                line_ending: Some(LineEnding::LF),
-                color: Some(Color::Reset),
+                baud_rate: 115_200,
+                data_bits: DataBits::Eight,
+                stop_bits: StopBits::One,
+                parity: Parity::None,
+                flow_control: FlowControl::None,
+                line_ending: LineEnding::LF,
+                color: Color::Reset,
             }
         );
     }
@@ -244,9 +244,9 @@ mod tests {
     #[test]
     fn test_example() {
         let mut port_config: PortConfig = PortConfig::default();
-        port_config.baud_rate = Some(9600);
-        port_config.line_ending = Some(LineEnding::CRLF);
-        assert_eq!(port_config.baud_rate, Some(9600));
-        assert_eq!(port_config.line_ending, Some(LineEnding::CRLF));
+        port_config.baud_rate = 9600;
+        port_config.line_ending = LineEnding::CRLF;
+        assert_eq!(port_config.baud_rate, 9600);
+        assert_eq!(port_config.line_ending, LineEnding::CRLF);
     }
 }

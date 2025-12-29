@@ -1,0 +1,3 @@
+[port1]
+path = "/dev/ttyUSB0"
+baud_rate = "not_a_number"

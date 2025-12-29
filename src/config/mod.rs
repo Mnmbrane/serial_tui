@@ -1,12 +1,10 @@
 pub mod port_config;
 pub use port_config::PortConfig;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, fs};
 
 use crate::error::AppError;
 
-#[derive(Serialize, Deserialize)]
-pub struct PortConfigMap(HashMap<String, PortConfig>);
 // Want just 2 differnt configs for now.
 // 1. PortConfig - Contains com port details
 // 2. MacroConfig - Contains keybindings for VIM Motions (TODO)
@@ -23,55 +21,132 @@ impl AppConfig {
         }
     }
 
-    pub fn init(&mut self, cfg: &str) -> Result<(), AppError> {
-        self.port_config = toml::from_str(cfg)?;
+    pub fn init(&mut self, port_cfg_path: &str) -> Result<(), AppError> {
+        self.port_config = toml::from_str(port_cfg_path)?;
+        Ok(())
+    }
+
+    pub fn save_port_cfg(&self, port_cfg_path: &str) -> Result<(), AppError> {
+        let content = toml::to_string_pretty(&self.port_config)?;
+        fs::write(port_cfg_path, content)?;
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod test {
-
-    use crate::config::port_config::Color;
-
     use super::*;
+    use crate::config::port_config::{Color, DataBits, FlowControl, LineEnding, Parity, StopBits};
+    use std::path::PathBuf;
 
     #[test]
-    fn test_port_cfg() {
-        let toml_str = r##"
-            [USB0]
-            path = "/dev/ttyUSB0"
-            baud_rate = 115200
-            data_bits = 8
-            stop_bits = 1
-            parity = "none"
-            flow_control = "none"
-            line_ending = "\n"
-            color = "green"
+    fn test_parse_valid_config() {
+        let mut app_config = AppConfig::new();
+        app_config
+            .init(include_str!("test/valid_config.toml"))
+            .unwrap();
 
-            [USB1]
-            path = "/dev/ttyUSB1"
-            baud_rate = 9600
-
-            [ACM0]
-            path = "/dev/ttyACM0"
-            baud_rate = 115200
-            color = "#FF5500"
-"##;
-        let mut app_config: AppConfig = AppConfig::new();
-        app_config.init(toml_str).unwrap();
-        assert_eq!(app_config.port_config.len(), 3);
         assert_eq!(
-            app_config.port_config.get("USB0").unwrap().baud_rate,
-            Some(115200)
+            app_config.port_config.get("port1").unwrap(),
+            &PortConfig {
+                path: PathBuf::from("/dev/ttyUSB0"),
+                baud_rate: 115200,
+                data_bits: DataBits::Eight,
+                stop_bits: StopBits::One,
+                parity: Parity::None,
+                flow_control: FlowControl::None,
+                line_ending: LineEnding::CRLF,
+                color: Color::Green,
+            }
         );
+
         assert_eq!(
-            app_config.port_config.get("ACM0").unwrap().color,
-            Some(Color::Rgb {
+            app_config.port_config.get("port2").unwrap(),
+            &PortConfig {
+                path: PathBuf::from("/dev/ttyUSB1"),
+                baud_rate: 9600,
+                data_bits: DataBits::Seven,
+                stop_bits: StopBits::Two,
+                parity: Parity::Even,
+                flow_control: FlowControl::Hardware,
+                line_ending: LineEnding::LF,
+                color: Color::Rgb {
+                    r: 255,
+                    g: 128,
+                    b: 0
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_minimal_uses_defaults() {
+        let mut app_config = AppConfig::new();
+        app_config
+            .init(include_str!("test/minimal_config.toml"))
+            .unwrap();
+
+        assert_eq!(
+            app_config.port_config.get("port1").unwrap(),
+            &PortConfig {
+                path: PathBuf::from("/dev/ttyUSB0"),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_invalid_baud_fails() {
+        let mut app_config = AppConfig::new();
+        assert!(
+            app_config
+                .init(include_str!("test/invalid_baud.toml"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_invalid_databits_fails() {
+        let mut app_config = AppConfig::new();
+        assert!(
+            app_config
+                .init(include_str!("test/invalid_databits.toml"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_invalid_color_fails() {
+        let mut app_config = AppConfig::new();
+        assert!(
+            app_config
+                .init(include_str!("test/invalid_color.toml"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_line_ending_parsing() {
+        assert_eq!(LineEnding::try_from("lf".to_string()), Ok(LineEnding::LF));
+        assert_eq!(LineEnding::try_from("cr".to_string()), Ok(LineEnding::CR));
+        assert_eq!(
+            LineEnding::try_from("crlf".to_string()),
+            Ok(LineEnding::CRLF)
+        );
+        assert!(LineEnding::try_from("invalid".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_color_hex_parsing() {
+        assert_eq!(
+            Color::try_from("#ff8000".to_string()),
+            Ok(Color::Rgb {
                 r: 255,
-                g: 85,
-                b: 0,
+                g: 128,
+                b: 0
             })
         );
+        assert!(Color::try_from("#fff".to_string()).is_err());
+        assert!(Color::try_from("#gggggg".to_string()).is_err());
     }
 }
