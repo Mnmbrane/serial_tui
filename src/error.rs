@@ -3,6 +3,8 @@ pub enum AppError {
     Io(std::io::Error),
     TomlDe(toml::de::Error),
     TomlSer(toml::ser::Error),
+    InvalidPortName(&'static str),
+    InvalidFilePath(&'static str),
 }
 
 impl std::fmt::Display for AppError {
@@ -12,6 +14,8 @@ impl std::fmt::Display for AppError {
             Io(e) => write!(f, "IO error: {e}"),
             TomlDe(e) => write!(f, "Toml Deserialize error: {e}"),
             TomlSer(e) => write!(f, "IO error: {e}"),
+            InvalidPortName(e) => write!(f, "Invalid Port Name: {e}"),
+            InvalidFilePath(e) => write!(f, "Invalid File Path: {e}"),
         }
     }
 }

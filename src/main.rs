@@ -12,22 +12,15 @@
 //! ## Shutdown
 //! All tasks receive shutdown signal via channel close or AppState.running flag.
 
-mod app_state;
 mod config;
 mod error;
+mod serialtui;
 
-use app_state::AppState;
 use error::AppError;
-
-const PORT_CONFIG_PATH: &'static str = "config/ports.toml";
+use serialtui::SerialTui;
 
 fn main() -> Result<(), AppError> {
-    let app_state = AppState::new().inspect_err(|e| eprintln!("{e}"))?;
-    let _ = app_state
-        .configure(PORT_CONFIG_PATH)
-        .map_err(|e| eprintln!("{e}"));
-
-    // Read the config
+    let app_state = SerialTui::new().inspect_err(|e| eprintln!("{e}"))?;
 
     // Start the serial readers and writers
 

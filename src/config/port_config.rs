@@ -190,7 +190,7 @@ impl TryFrom<String> for Color {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(default)]
 pub struct PortConfig {
     pub path: PathBuf,
