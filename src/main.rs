@@ -20,13 +20,6 @@ use error::AppError;
 use serialtui::SerialTui;
 
 fn main() -> Result<(), AppError> {
-    let app_state = SerialTui::new().inspect_err(|e| eprintln!("{e}"))?;
-
-    // Start the serial readers and writers
-
-    // Start logger
-
-    // Start the UI
-
+    SerialTui::new()?.setup_ports()?;
     Ok(())
 }

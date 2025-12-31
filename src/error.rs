@@ -5,6 +5,7 @@ pub enum AppError {
     TomlSer(toml::ser::Error),
     InvalidPortName(&'static str),
     InvalidFilePath(&'static str),
+    ConfigPortInsert(&'static str),
 }
 
 impl std::fmt::Display for AppError {
@@ -16,6 +17,7 @@ impl std::fmt::Display for AppError {
             TomlSer(e) => write!(f, "IO error: {e}"),
             InvalidPortName(e) => write!(f, "Invalid Port Name: {e}"),
             InvalidFilePath(e) => write!(f, "Invalid File Path: {e}"),
+            ConfigPortInsert(e) => write!(f, "Could not insert new port element: {e}"),
         }
     }
 }

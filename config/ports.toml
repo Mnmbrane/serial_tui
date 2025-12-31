@@ -1,26 +1,33 @@
-# --- defaults ---
-# baud_rate = 115200
-# data_bits = 8          # 5, 6, 7, 8
-# stop_bits = 1          # 1, 2
-# parity = "none"        # none, odd, even
-# flow_control = "none"  # none, software, hardware
-# line_ending = "\n"     # "\n", "\r\n", "\r"
+# SerialTUI Configuration
 
-[USB0]
-path = "/dev/ttyUSB0"
+# ============================================================================
+# PORTS
+# ============================================================================
+# Each port is defined as [ports.<name>]
+#
+# Required:
+#   path        - system path to serial port (e.g., "/dev/ttyUSB0")
+#
+# Optional (defaults shown):
+#   baud_rate    = 115200
+#   data_bits    = 8              # 5, 6, 7, 8
+#   stop_bits    = 1              # 1, 2
+#   parity       = "none"         # none, odd, even
+#   flow_control = "none"         # none, software, hardware
+#   line_ending  = "crlf"         # lf, cr, crlf
+#   color        = "white"        # named color or hex "#RRGGBB"
+
+[com1]
+path = "/dev/ttyV0"
 baud_rate = 115200
-data_bits = 8
-stop_bits = 1
-parity = "none"
-flow_control = "none"
-line_ending = "\n"
 color = "green"
 
-[USB1]
-path = "/dev/ttyUSB1"
-baud_rate = 9600
-
-[ACM0]
-path = "/dev/ttyACM0"
+[com2]
+path = "/dev/ttyV1"
 baud_rate = 115200
-color = "#FF5500"
+color = "#FF5733"
+
+[com3]
+path = "/dev/ttyV3"
+baud_rate = 115200
+color = "red"
