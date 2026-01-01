@@ -57,10 +57,7 @@ impl SharedConfig {
     }
 
     // append ports from file to the map
-    pub fn from_file(
-        mut self,
-        port_config_path: impl AsRef<Path> + Display,
-    ) -> Result<Self, AppError> {
+    pub fn from_file(mut self, port_config_path: impl AsRef<Path>) -> Result<Self, AppError> {
         let cfg: Config = toml::from_str(read_to_string(port_config_path)?.as_str())?;
 
         for (name, port) in cfg.cfg_map {
@@ -71,7 +68,7 @@ impl SharedConfig {
     }
 
     /// Save port config hash map into a file
-    pub fn save(&self, port_cfg_path: impl AsRef<str>) -> Result<(), AppError> {
+    pub fn save(&self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
         let cfg_map = Config::from(self).cfg_map;
         let content = toml::to_string_pretty(&cfg_map)?;
         fs::write(port_cfg_path.as_ref(), content)?;
@@ -108,7 +105,7 @@ impl SharedConfig {
 mod test {
     use super::*;
     use crate::config::port::{Color, DataBits, FlowControl, LineEnding, Parity, StopBits};
-    use std::path::PathBuf;
+    use std::{env::temp_dir, path::PathBuf};
 
     #[test]
     fn test_parse_valid_config() {
@@ -219,7 +216,7 @@ mod test {
     #[test]
     fn test_save_port_config() {
         let mut app_config = SharedConfig::new();
-        app_config.insert_port(
+        let _ = app_config.insert_port(
             "test_port".to_string(),
             PortConfig {
                 path: PathBuf::from("/dev/ttyUSB0"),
@@ -233,16 +230,17 @@ mod test {
             },
         );
 
-        let save_path = "src/config/test/save_file_input.toml";
-        app_config.save(save_path).unwrap();
+        let save_path = temp_dir().as_path().join("save_file_input.toml");
+        app_config.save(&save_path).unwrap();
 
         // Load it back and verify
-        let loaded_config = SharedConfig::new().from_file(save_path).unwrap();
+        let loaded_config = SharedConfig::new().from_file(&save_path).unwrap();
 
         assert_eq!(
             loaded_config.get_port("test_port").unwrap(),
             app_config.get_port("test_port").unwrap()
         );
+        app_config.save(&save_path).unwrap();
 
         // Clean up
         fs::remove_file(save_path).unwrap();

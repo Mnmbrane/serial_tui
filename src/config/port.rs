@@ -1,5 +1,8 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Error};
 use std::path::PathBuf;
+use toml::de;
+
+use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(try_from = "String")]
@@ -25,7 +28,7 @@ impl TryFrom<String> for LineEnding {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Default)]
 #[serde(try_from = "u8")]
 pub enum DataBits {
     Five,
@@ -36,7 +39,7 @@ pub enum DataBits {
 }
 
 impl TryFrom<u8> for DataBits {
-    type Error = String;
+    type Error = AppError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
@@ -44,10 +47,18 @@ impl TryFrom<u8> for DataBits {
             6 => Ok(DataBits::Six),
             7 => Ok(DataBits::Seven),
             8 => Ok(DataBits::Eight),
-            e => Err(format!(
-                "Unable to parse data bit {e}, must be 5, 6, 7 or 8."
-            )),
+            _ => Err(AppError::InvalidDataBits("Invalid value {value}")),
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for DataBits {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        DataBits::try_from(value).map_err(|e| D::Error::custom(e))
     }
 }
 
