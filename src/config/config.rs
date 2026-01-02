@@ -66,8 +66,16 @@ mod test {
 
     use super::*;
     use serialport::{FlowControl, Parity};
-    use std::{path::PathBuf, str::FromStr};
-    use tempfile::tempdir;
+    use std::{io::Write, path::PathBuf, str::FromStr};
+    use tempfile::{NamedTempFile, tempdir};
+
+    // Helper to create a temp TOML file
+    fn create_test_toml(content: &str) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        file.flush().unwrap();
+        file
+    }
 
     // Helper to create a test PortConfig
     fn test_port_config() -> PortConfig {
@@ -96,9 +104,31 @@ mod test {
 
     #[test]
     fn from_file_loads_valid_config() {
-        let config = PortMap::new()
-            .from_file("src/config/test/valid_config.toml")
-            .unwrap();
+        let file = create_test_toml(
+            r##"
+[port1]
+path = "/dev/ttyUSB0"
+baud_rate = 115200
+data_bits = 8
+stop_bits = 1
+parity = "None"
+flow_control = "None"
+line_ending = "crlf"
+color = "green"
+
+[port2]
+path = "/dev/ttyUSB1"
+baud_rate = 9600
+data_bits = 7
+stop_bits = 2
+parity = "Even"
+flow_control = "Hardware"
+line_ending = "lf"
+color = "#FF8000"
+        "##,
+        );
+
+        let config = PortMap::new().from_file(file.path()).unwrap();
 
         let port1 = config.port_map.get("port1").unwrap().read().unwrap();
         let port2 = config.port_map.get("port2").unwrap().read().unwrap();
@@ -108,9 +138,14 @@ mod test {
 
     #[test]
     fn from_file_uses_defaults_for_missing_fields() {
-        let config = PortMap::new()
-            .from_file("src/config/test/minimal_config.toml")
-            .unwrap();
+        let file = create_test_toml(
+            r##"
+[port1]
+path = "/dev/ttyUSB0"
+        "##,
+        );
+
+        let config = PortMap::new().from_file(file.path()).unwrap();
 
         let port = config.port_map.get("port1").unwrap().read().unwrap();
         assert_eq!(port.path, PathBuf::from("/dev/ttyUSB0"));
@@ -126,21 +161,29 @@ mod test {
 
     #[test]
     fn from_file_fails_on_invalid_baud() {
-        let result = PortMap::new().from_file("src/config/test/invalid_baud.toml");
+        let file = create_test_toml(
+            r#"
+[port1]
+path = "/dev/ttyUSB0"
+baud_rate = "not_a_number"
+        "#,
+        );
+
+        let result = PortMap::new().from_file(file.path());
         assert!(result.is_err());
-    }
-
-    //#[test]
-    fn from_file_fails_on_invalid_databits() {
-        // TODO:: Make validation for data bits
-
-        //let result = PortMap::new().from_file("src/config/test/invalid_databits.toml");
-        //assert!(result.is_err());
     }
 
     #[test]
     fn from_file_fails_on_invalid_color() {
-        let result = PortMap::new().from_file("src/config/test/invalid_color.toml");
+        let file = create_test_toml(
+            r#"
+[port1]
+path = "/dev/ttyUSB0"
+color = "invalid_color"
+        "#,
+        );
+
+        let result = PortMap::new().from_file(file.path());
         assert!(result.is_err());
     }
 
