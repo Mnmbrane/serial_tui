@@ -16,6 +16,7 @@ mod config;
 mod error;
 mod serial;
 mod serialtui;
+mod types;
 
 use error::AppError;
 use serialtui::SerialTui;

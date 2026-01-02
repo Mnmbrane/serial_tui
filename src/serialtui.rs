@@ -1,7 +1,4 @@
-use crate::{
-    config::{PortConfig, PortMap},
-    error::AppError,
-};
+use crate::{config::PortMap, error::AppError};
 
 #[derive(Clone)]
 pub struct SerialTui {

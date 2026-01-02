@@ -1,6 +1,9 @@
-use serde::{Deserialize, Serialize, de::Error};
-use serialport::{DataBits, FlowControl, Parity, StopBits};
-use std::path::PathBuf;
+use ratatui::style::Color as RatatuiColor;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use serialport::{FlowControl, Parity};
+use std::{path::PathBuf, str::FromStr};
+
+use crate::{error::AppError, types::Color};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(try_from = "String")]
@@ -26,20 +29,13 @@ impl TryFrom<String> for LineEnding {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Color {
-    Rgb(u8, u8, u8),
-    Named(String),
-}
-
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(default)]
 pub struct PortConfig {
     pub path: PathBuf,
     pub baud_rate: u32,
-    pub data_bits: DataBits,
-    pub stop_bits: StopBits,
+    pub data_bits: u8,
+    pub stop_bits: u8,
     pub parity: Parity,
     pub flow_control: FlowControl,
     pub line_ending: LineEnding,
@@ -51,12 +47,12 @@ impl Default for PortConfig {
         Self {
             path: PathBuf::new(),
             baud_rate: 115_200,
-            data_bits: DataBits::Eight,
-            stop_bits: StopBits::One,
+            data_bits: 8,
+            stop_bits: 1,
             parity: Parity::None,
             flow_control: FlowControl::None,
             line_ending: LineEnding::default(),
-            color: Color::Named("green".into()),
+            color: Color(RatatuiColor::Reset),
         }
     }
 }
@@ -74,12 +70,12 @@ mod tests {
             PortConfig {
                 path: PathBuf::new(),
                 baud_rate: 115_200,
-                data_bits: DataBits::Eight,
-                stop_bits: StopBits::One,
+                data_bits: 8,
+                stop_bits: 1,
                 parity: Parity::None,
                 flow_control: FlowControl::None,
                 line_ending: LineEnding::LF,
-                color: Color::Named("green".into()),
+                color: Color(RatatuiColor::Reset),
             }
         );
     }

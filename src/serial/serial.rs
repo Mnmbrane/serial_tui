@@ -4,10 +4,10 @@ use std::{
     thread,
 };
 
-use crate::{config::PortConfig, error::AppError};
+use crate::{config::PortMap, error::AppError};
 
 pub struct Serial {
-    port_cfg_map: HashMap<String, Arc<RwLock<PortConfig>>>,
+    port_cfg_map: HashMap<String, Arc<RwLock<PortMap>>>,
 }
 
 impl Serial {
@@ -17,7 +17,7 @@ impl Serial {
         }
     }
     pub fn setup_ports(self) -> Result<Self, AppError> {
-        let spawn_port = |port: Arc<RwLock<PortConfig>>| {
+        let spawn_port = |port: Arc<RwLock<PortMap>>| {
             let port = port.clone();
 
             // spawn readers
@@ -32,7 +32,7 @@ impl Serial {
     pub fn insert_port(
         &mut self,
         port_name: impl AsRef<str>,
-        port_config: PortConfig,
+        port_config: PortMap,
     ) -> Result<(), AppError> {
         if let Some(_) = self.port_cfg_map.insert(
             port_name.as_ref().to_string(),
@@ -46,7 +46,7 @@ impl Serial {
         }
     }
 
-    pub fn get_port(&self, port_name: impl AsRef<str>) -> Option<PortConfig> {
+    pub fn get_port(&self, port_name: impl AsRef<str>) -> Option<PortMap> {
         if let Some(port) = self.port_cfg_map.get(port_name.as_ref()) {
             Some(port.read().unwrap().clone())
         } else {
