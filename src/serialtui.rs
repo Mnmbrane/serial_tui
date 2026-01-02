@@ -1,4 +1,12 @@
-use crate::{config::SharedConfig, error::AppError};
+use std::{
+    sync::{Arc, RwLock},
+    thread,
+};
+
+use crate::{
+    config::{PortConfig, SharedConfig},
+    error::AppError,
+};
 
 #[derive(Clone)]
 pub struct SerialTui {
@@ -12,10 +20,5 @@ impl SerialTui {
         Ok(Self {
             config: SharedConfig::new().from_file(PORT_CONFIG_PATH)?,
         })
-    }
-
-    pub fn setup_ports(self) -> Result<Self, AppError> {
-        let spawn_ports = |num_ports: u32| {};
-        Ok(self)
     }
 }

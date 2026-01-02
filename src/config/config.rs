@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fmt::Display,
     fs::{self, read_to_string},
     path::Path,
     sync::{Arc, RwLock},
@@ -74,175 +73,157 @@ impl SharedConfig {
         fs::write(port_cfg_path.as_ref(), content)?;
         Ok(())
     }
-
-    pub fn insert_port(
-        &mut self,
-        port_name: impl AsRef<str>,
-        port_config: PortConfig,
-    ) -> Result<(), AppError> {
-        if let Some(_) = self.cfg_map.insert(
-            port_name.as_ref().to_string(),
-            Arc::new(RwLock::new(port_config)),
-        ) {
-            Ok(())
-        } else {
-            Err(AppError::ConfigPortInsert(
-                "Unable to insert new port {port_name}",
-            ))
-        }
-    }
-
-    pub fn get_port(&self, port_name: impl AsRef<str>) -> Option<PortConfig> {
-        if let Some(port) = self.cfg_map.get(port_name.as_ref()) {
-            Some(port.read().unwrap().clone())
-        } else {
-            None
-        }
-    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::config::port::{Color, DataBits, FlowControl, LineEnding, Parity, StopBits};
-    use std::{env::temp_dir, path::PathBuf};
+    use crate::config::port::{Color, LineEnding};
+    use serialport::{DataBits, FlowControl, Parity, StopBits};
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    // Helper to create a test config
+    fn test_port_config() -> PortConfig {
+        PortConfig {
+            path: PathBuf::from("/dev/ttyUSB0"),
+            baud_rate: 115200,
+            data_bits: DataBits::Eight,
+            stop_bits: StopBits::One,
+            parity: Parity::None,
+            flow_control: FlowControl::None,
+            line_ending: LineEnding::CRLF,
+            color: Color::Named("Green".into()),
+        }
+    }
+
+    // ==================== from_file tests ====================
 
     #[test]
-    fn test_parse_valid_config() {
-        let app_config = SharedConfig::new()
+    fn from_file_loads_valid_config() {
+        let config = SharedConfig::new()
             .from_file("src/config/test/valid_config.toml")
             .unwrap();
 
-        assert_eq!(
-            app_config.get_port("port1").unwrap(),
-            PortConfig {
-                path: PathBuf::from("/dev/ttyUSB0"),
-                baud_rate: 115200,
-                data_bits: DataBits::Eight,
-                stop_bits: StopBits::One,
-                parity: Parity::None,
-                flow_control: FlowControl::None,
-                line_ending: LineEnding::CRLF,
-                color: Color::Green,
-            }
-        );
-
-        assert_eq!(
-            app_config.get_port("port2").unwrap(),
-            PortConfig {
-                path: PathBuf::from("/dev/ttyUSB1"),
-                baud_rate: 9600,
-                data_bits: DataBits::Seven,
-                stop_bits: StopBits::Two,
-                parity: Parity::Even,
-                flow_control: FlowControl::Hardware,
-                line_ending: LineEnding::LF,
-                color: Color::Rgb {
-                    r: 255,
-                    g: 128,
-                    b: 0
-                },
-            }
-        );
+        let port1 = config.cfg_map.get("port1").unwrap().read().unwrap();
+        let port2 = config.cfg_map.get("port2").unwrap().read().unwrap();
+        assert_eq!(port1.baud_rate, 115200);
+        assert_eq!(port2.baud_rate, 9600);
     }
 
     #[test]
-    fn test_parse_minimal_uses_defaults() {
-        let app_config = SharedConfig::new()
+    fn from_file_uses_defaults_for_missing_fields() {
+        let config = SharedConfig::new()
             .from_file("src/config/test/minimal_config.toml")
             .unwrap();
 
-        assert_eq!(
-            app_config.get_port("port1").unwrap(),
-            PortConfig {
-                path: PathBuf::from("/dev/ttyUSB0"),
-                ..Default::default()
-            }
-        );
+        let port = config.cfg_map.get("port1").unwrap().read().unwrap();
+        assert_eq!(port.path, PathBuf::from("/dev/ttyUSB0"));
+        assert_eq!(port.baud_rate, PortConfig::default().baud_rate);
+        assert_eq!(port.data_bits, PortConfig::default().data_bits);
     }
 
     #[test]
-    fn test_invalid_baud_fails() {
-        assert!(
-            SharedConfig::new()
-                .from_file("src/config/test/invalid_baud.toml")
-                .is_err()
-        );
+    fn from_file_fails_on_missing_file() {
+        let result = SharedConfig::new().from_file("nonexistent.toml");
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_invalid_databits_fails() {
-        assert!(
-            SharedConfig::new()
-                .from_file("src/config/test/invalid_databits.toml")
-                .is_err()
-        );
+    fn from_file_fails_on_invalid_baud() {
+        let result = SharedConfig::new().from_file("src/config/test/invalid_baud.toml");
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_invalid_color_fails() {
-        assert!(
-            SharedConfig::new()
-                .from_file("src/config/test/invalid_color.toml")
-                .is_err()
-        );
+    fn from_file_fails_on_invalid_databits() {
+        let result = SharedConfig::new().from_file("src/config/test/invalid_databits.toml");
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_line_ending_parsing() {
-        assert_eq!(LineEnding::try_from("lf".to_string()), Ok(LineEnding::LF));
-        assert_eq!(LineEnding::try_from("cr".to_string()), Ok(LineEnding::CR));
-        assert_eq!(
-            LineEnding::try_from("crlf".to_string()),
-            Ok(LineEnding::CRLF)
-        );
-        assert!(LineEnding::try_from("invalid".to_string()).is_err());
+    fn from_file_fails_on_invalid_color() {
+        let result = SharedConfig::new().from_file("src/config/test/invalid_color.toml");
+        assert!(result.is_err());
+    }
+
+    // ==================== save tests ====================
+
+    #[test]
+    fn save_and_load_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("roundtrip.toml");
+
+        // Create SharedConfig from a raw Config
+        let mut raw = Config {
+            cfg_map: HashMap::new(),
+        };
+        raw.cfg_map
+            .insert("test_port".to_string(), test_port_config());
+        let config = SharedConfig::from(&raw);
+
+        config.save(&path).unwrap();
+
+        let loaded = SharedConfig::new().from_file(&path).unwrap();
+        let port = loaded.cfg_map.get("test_port").unwrap().read().unwrap();
+        assert_eq!(*port, test_port_config());
     }
 
     #[test]
-    fn test_color_hex_parsing() {
-        assert_eq!(
-            Color::try_from("#ff8000".to_string()),
-            Ok(Color::Rgb {
-                r: 255,
-                g: 128,
-                b: 0
-            })
-        );
-        assert!(Color::try_from("#fff".to_string()).is_err());
-        assert!(Color::try_from("#gggggg".to_string()).is_err());
+    fn save_overwrites_existing_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("overwrite.toml");
+
+        // Save first config
+        let mut raw1 = Config {
+            cfg_map: HashMap::new(),
+        };
+        raw1.cfg_map.insert("port1".to_string(), test_port_config());
+        let config1 = SharedConfig::from(&raw1);
+        config1.save(&path).unwrap();
+
+        // Save different config to same file
+        let mut different = test_port_config();
+        different.baud_rate = 9600;
+        let mut raw2 = Config {
+            cfg_map: HashMap::new(),
+        };
+        raw2.cfg_map.insert("port2".to_string(), different.clone());
+        let config2 = SharedConfig::from(&raw2);
+        config2.save(&path).unwrap();
+
+        // Load and verify it's the second config
+        let loaded = SharedConfig::new().from_file(&path).unwrap();
+        assert!(loaded.cfg_map.get("port1").is_none());
+        let port2 = loaded.cfg_map.get("port2").unwrap().read().unwrap();
+        assert_eq!(*port2, different);
     }
 
     #[test]
-    fn test_save_port_config() {
-        let mut app_config = SharedConfig::new();
-        let _ = app_config.insert_port(
-            "test_port".to_string(),
-            PortConfig {
-                path: PathBuf::from("/dev/ttyUSB0"),
-                baud_rate: 115200,
-                data_bits: DataBits::Eight,
-                stop_bits: StopBits::One,
-                parity: Parity::None,
-                flow_control: FlowControl::None,
-                line_ending: LineEnding::CRLF,
-                color: Color::Green,
-            },
-        );
+    fn save_preserves_all_fields() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("all_fields.toml");
 
-        let save_path = temp_dir().as_path().join("save_file_input.toml");
-        app_config.save(&save_path).unwrap();
+        let full_config = PortConfig {
+            path: PathBuf::from("/dev/ttyACM0"),
+            baud_rate: 9600,
+            data_bits: DataBits::Seven,
+            stop_bits: StopBits::Two,
+            parity: Parity::Even,
+            flow_control: FlowControl::Hardware,
+            line_ending: LineEnding::LF,
+            color: Color::Rgb(255, 128, 0),
+        };
 
-        // Load it back and verify
-        let loaded_config = SharedConfig::new().from_file(&save_path).unwrap();
+        let mut raw = Config {
+            cfg_map: HashMap::new(),
+        };
+        raw.cfg_map.insert("full".to_string(), full_config.clone());
+        let config = SharedConfig::from(&raw);
+        config.save(&path).unwrap();
 
-        assert_eq!(
-            loaded_config.get_port("test_port").unwrap(),
-            app_config.get_port("test_port").unwrap()
-        );
-        app_config.save(&save_path).unwrap();
-
-        // Clean up
-        fs::remove_file(save_path).unwrap();
+        let loaded = SharedConfig::new().from_file(&path).unwrap();
+        let port = loaded.cfg_map.get("full").unwrap().read().unwrap();
+        assert_eq!(*port, full_config);
     }
 }

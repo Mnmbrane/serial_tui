@@ -14,12 +14,13 @@
 
 mod config;
 mod error;
+mod serial;
 mod serialtui;
 
 use error::AppError;
 use serialtui::SerialTui;
 
 fn main() -> Result<(), AppError> {
-    SerialTui::new()?.setup_ports()?;
+    SerialTui::new()?;
     Ok(())
 }

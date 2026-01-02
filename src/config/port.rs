@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize, de::Error};
+use serialport::{DataBits, FlowControl, Parity, StopBits};
 use std::path::PathBuf;
-use toml::de;
-
-use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(try_from = "String")]
@@ -28,177 +26,11 @@ impl TryFrom<String> for LineEnding {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Default)]
-#[serde(try_from = "u8")]
-pub enum DataBits {
-    Five,
-    Six,
-    Seven,
-    #[default]
-    Eight,
-}
-
-impl TryFrom<u8> for DataBits {
-    type Error = AppError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            5 => Ok(DataBits::Five),
-            6 => Ok(DataBits::Six),
-            7 => Ok(DataBits::Seven),
-            8 => Ok(DataBits::Eight),
-            _ => Err(AppError::InvalidDataBits("Invalid value {value}")),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for DataBits {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let value = u8::deserialize(deserializer)?;
-        DataBits::try_from(value).map_err(|e| D::Error::custom(e))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
-#[serde(try_from = "u8")]
-pub enum StopBits {
-    #[default]
-    One,
-    Two,
-}
-
-impl TryFrom<u8> for StopBits {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(StopBits::One),
-            2 => Ok(StopBits::Two),
-            e => Err(format!("Unable to parse stop bit {e}, must be 1 or 2.")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
-#[serde(try_from = "String")]
-pub enum Parity {
-    #[default]
-    None,
-    Odd,
-    Even,
-}
-
-impl TryFrom<String> for Parity {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
-            "none" => Ok(Parity::None),
-            "odd" => Ok(Parity::Odd),
-            "even" => Ok(Parity::Even),
-            e => Err(format!(
-                "Unable to parse parity {e}, must be \"none\", \"odd\" or \"even\"."
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
-#[serde(try_from = "String")]
-pub enum FlowControl {
-    #[default]
-    None,
-    Software,
-    Hardware,
-}
-
-impl TryFrom<String> for FlowControl {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
-            "none" => Ok(FlowControl::None),
-            "software" => Ok(FlowControl::Software),
-            "hardware" => Ok(FlowControl::Hardware),
-            e => Err(format!(
-                "Unable to parse flow_control {e}, must be \"none\", \"software\" or \"hardware\"."
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
-#[serde(try_from = "String")]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Color {
-    #[default]
-    Reset,
-    Black,
-    DarkGrey,
-    Red,
-    DarkRed,
-    Green,
-    DarkGreen,
-    Yellow,
-    DarkYellow,
-    Blue,
-    DarkBlue,
-    Magenta,
-    DarkMagenta,
-    Cyan,
-    DarkCyan,
-    White,
-    Grey,
-    Rgb {
-        r: u8,
-        g: u8,
-        b: u8,
-    },
-}
-
-impl TryFrom<String> for Color {
-    type Error = String;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
-            "reset" => Ok(Color::Reset),
-            "black" => Ok(Color::Black),
-            "darkgrey" => Ok(Color::DarkGrey),
-            "red" => Ok(Color::Red),
-            "darkred" => Ok(Color::DarkRed),
-            "green" => Ok(Color::Green),
-            "darkgreen" => Ok(Color::DarkGreen),
-            "yellow" => Ok(Color::Yellow),
-            "darkyellow" => Ok(Color::DarkYellow),
-            "blue" => Ok(Color::Blue),
-            "darkblue" => Ok(Color::DarkBlue),
-            "magenta" => Ok(Color::Magenta),
-            "darkmagenta" => Ok(Color::DarkMagenta),
-            "cyan" => Ok(Color::Cyan),
-            "darkcyan" => Ok(Color::DarkCyan),
-            "white" => Ok(Color::White),
-            "grey" => Ok(Color::Grey),
-            s if s.starts_with('#') => {
-                let hex = s.trim_start_matches('#');
-
-                if hex.len() != 6 {
-                    return Err(format!("Invalid hex color: {}", hex));
-                }
-
-                Ok(Color::Rgb {
-                    r: u8::from_str_radix(&hex[0..=1], 16)
-                        .map_err(|_| format!("Invalid hex for r component: {}", &hex[0..=1]))?,
-                    g: u8::from_str_radix(&hex[2..=3], 16)
-                        .map_err(|_| format!("Invalid hex for g component: {}", &hex[2..=3]))?,
-                    b: u8::from_str_radix(&hex[4..=5], 16)
-                        .map_err(|_| format!("Invalid hex for b component: {}", &hex[4..=5]))?,
-                })
-            }
-            e => Err(format!("Unable to parse color {e}.")),
-        }
-    }
+    Rgb(u8, u8, u8),
+    Named(String),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -219,12 +51,12 @@ impl Default for PortConfig {
         Self {
             path: PathBuf::new(),
             baud_rate: 115_200,
-            data_bits: DataBits::default(),
-            stop_bits: StopBits::default(),
-            parity: Parity::default(),
-            flow_control: FlowControl::default(),
+            data_bits: DataBits::Eight,
+            stop_bits: StopBits::One,
+            parity: Parity::None,
+            flow_control: FlowControl::None,
             line_ending: LineEnding::default(),
-            color: Color::default(),
+            color: Color::Named("green".into()),
         }
     }
 }
@@ -247,7 +79,7 @@ mod tests {
                 parity: Parity::None,
                 flow_control: FlowControl::None,
                 line_ending: LineEnding::LF,
-                color: Color::Reset,
+                color: Color::Named("green".into()),
             }
         );
     }
