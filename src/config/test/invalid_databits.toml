@@ -1,3 +1,0 @@
-[port1]
-path = "/dev/ttyUSB0"
-data_bits = 9
