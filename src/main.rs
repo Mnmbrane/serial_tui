@@ -12,16 +12,18 @@
 //! ## Shutdown
 //! All tasks receive shutdown signal via channel close or AppState.running flag.
 
-mod config;
 mod error;
 mod serial;
-mod serialtui;
 mod types;
 
-use error::AppError;
-use serialtui::SerialTui;
+use crate::{error::AppError, serial::Serial, types::port_map::PortMap};
 
 fn main() -> Result<(), AppError> {
-    SerialTui::new()?;
+    // Create the port mapping from the config
+    let port_map = PortMap::new().from_file("config/ports.toml")?;
+
+    // Create serial handler and give port mapping to it
+    let serial_handler = Serial::new(port_map);
+
     Ok(())
 }

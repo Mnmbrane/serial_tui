@@ -31,7 +31,7 @@ impl TryFrom<String> for LineEnding {
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(default)]
-pub struct PortConfig {
+pub struct PortInfo {
     pub path: PathBuf,
     pub baud_rate: u32,
     pub data_bits: u8,
@@ -42,7 +42,7 @@ pub struct PortConfig {
     pub color: Color,
 }
 
-impl Default for PortConfig {
+impl Default for PortInfo {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
@@ -64,10 +64,10 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let port_config: PortConfig = PortConfig::default();
+        let port_config: PortInfo = PortInfo::default();
         assert_eq!(
             port_config,
-            PortConfig {
+            PortInfo {
                 path: PathBuf::new(),
                 baud_rate: 115_200,
                 data_bits: 8,
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_example() {
-        let mut port_config: PortConfig = PortConfig::default();
+        let mut port_config: PortInfo = PortInfo::default();
         port_config.baud_rate = 9600;
         port_config.line_ending = LineEnding::CRLF;
         assert_eq!(port_config.baud_rate, 9600);

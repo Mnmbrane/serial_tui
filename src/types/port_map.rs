@@ -6,15 +6,44 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use crate::types;
-use crate::{error::AppError, types::PortConfig};
+use crate::{error::AppError, types::PortInfo};
 
 // Want just 2 differnt configs for now.
 // 1. PortConfig - Contains com port details
 // 2. MacroConfig - Contains keybindings for VIM Motions (TODO)
 #[derive(Clone, Default, Debug)]
 pub struct PortMap {
-    port_map: HashMap<String, Arc<RwLock<PortConfig>>>,
+    port_map: HashMap<String, Arc<RwLock<PortInfo>>>,
+}
+
+impl PortMap {
+    pub fn new() -> Self {
+        Self {
+            port_map: HashMap::new(),
+        }
+    }
+
+    // append ports from file to the map
+    pub fn from_file(mut self, port_config_path: impl AsRef<Path>) -> Result<Self, AppError> {
+        for (name, port) in
+            toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
+        {
+            self.port_map.insert(name, Arc::new(RwLock::new(port)));
+        }
+
+        Ok(self)
+    }
+
+    /// Save port config hash map into a file
+    pub fn save(&self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
+        let content = toml::to_string_pretty(self)?;
+        fs::write(port_cfg_path.as_ref(), content)?;
+        Ok(())
+    }
+
+    pub fn insert(&mut self, key: String, port_info: PortInfo) -> Option<Arc<RwLock<PortInfo>>> {
+        self.port_map.insert(key, Arc::new(RwLock::new(port_info)))
+    }
 }
 
 impl Serialize for PortMap {
@@ -34,35 +63,9 @@ impl Serialize for PortMap {
     }
 }
 
-impl PortMap {
-    pub fn new() -> Self {
-        Self {
-            port_map: HashMap::new(),
-        }
-    }
-
-    // append ports from file to the map
-    pub fn from_file(mut self, port_config_path: impl AsRef<Path>) -> Result<Self, AppError> {
-        for (name, port) in toml::from_str::<HashMap<String, PortConfig>>(
-            read_to_string(port_config_path)?.as_str(),
-        )? {
-            self.port_map.insert(name, Arc::new(RwLock::new(port)));
-        }
-
-        Ok(self)
-    }
-
-    /// Save port config hash map into a file
-    pub fn save(&self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
-        let content = toml::to_string_pretty(self)?;
-        fs::write(port_cfg_path.as_ref(), content)?;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use crate::types::{Color, port::LineEnding};
+    use crate::types::{Color, port_info::LineEnding};
 
     use super::*;
     use serialport::{FlowControl, Parity};
@@ -78,8 +81,8 @@ mod test {
     }
 
     // Helper to create a test PortConfig
-    fn test_port_config() -> PortConfig {
-        PortConfig {
+    fn test_port_config() -> PortInfo {
+        PortInfo {
             path: PathBuf::from("/dev/ttyUSB0"),
             baud_rate: 115200,
             data_bits: 8,
@@ -92,7 +95,7 @@ mod test {
     }
 
     // Helper to create a Config with a single port
-    fn config_with_port(name: &str, port: PortConfig) -> PortMap {
+    fn config_with_port(name: &str, port: PortInfo) -> PortMap {
         let mut config = PortMap::new();
         config
             .port_map
@@ -149,8 +152,8 @@ path = "/dev/ttyUSB0"
 
         let port = config.port_map.get("port1").unwrap().read().unwrap();
         assert_eq!(port.path, PathBuf::from("/dev/ttyUSB0"));
-        assert_eq!(port.baud_rate, PortConfig::default().baud_rate);
-        assert_eq!(port.data_bits, PortConfig::default().data_bits);
+        assert_eq!(port.baud_rate, PortInfo::default().baud_rate);
+        assert_eq!(port.data_bits, PortInfo::default().data_bits);
     }
 
     #[test]
@@ -229,7 +232,7 @@ color = "invalid_color"
         let dir = tempdir().unwrap();
         let path = dir.path().join("all_fields.toml");
 
-        let full_port = PortConfig {
+        let full_port = PortInfo {
             path: PathBuf::from("/dev/ttyACM0"),
             baud_rate: 9600,
             data_bits: 7,
