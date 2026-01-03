@@ -1,3 +1,5 @@
+//! Thread-safe collection of port configurations.
+
 use serde::{Serialize, Serializer, ser::SerializeMap};
 use std::{
     collections::HashMap,
@@ -8,9 +10,10 @@ use std::{
 
 use crate::{error::AppError, types::PortInfo};
 
-// Want just 2 differnt configs for now.
-// 1. PortConfig - Contains com port details
-// 2. MacroConfig - Contains keybindings for VIM Motions (TODO)
+/// Thread-safe map of named serial port configurations.
+///
+/// Each port is wrapped in `Arc<RwLock<>>` for safe concurrent access
+/// across multiple threads (reader, writer, UI).
 #[derive(Clone, Default, Debug)]
 pub struct PortMap {
     port_map: HashMap<String, Arc<RwLock<PortInfo>>>,
@@ -23,7 +26,10 @@ impl PortMap {
         }
     }
 
-    // append ports from file to the map
+    /// Load port configurations from a TOML file.
+    ///
+    /// Appends all ports from the file to this map. The TOML file should have
+    /// one `[port_name]` section per port.
     pub fn from_file(mut self, port_config_path: impl AsRef<Path>) -> Result<Self, AppError> {
         for (name, port) in
             toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
@@ -34,7 +40,10 @@ impl PortMap {
         Ok(self)
     }
 
-    /// Save port config hash map into a file
+    /// Save all port configurations to a TOML file.
+    ///
+    /// Overwrites the file if it exists. Each port is saved as a separate
+    /// `[port_name]` section.
     pub fn save(&self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
         let content = toml::to_string_pretty(self)?;
         fs::write(port_cfg_path.as_ref(), content)?;

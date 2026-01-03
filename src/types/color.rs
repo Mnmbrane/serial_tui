@@ -1,8 +1,19 @@
+//! Terminal color wrapper with serde support.
+
+use std::{fmt::Display, str::FromStr};
+
 use ratatui::style::Color as RatatuiColor;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::AppError;
 
+/// Wrapper around ratatui::Color with custom serialization.
+///
+/// Supports parsing from:
+/// - Hex colors: `"#FF8000"`
+/// - Named colors: `"green"`, `"red"`, `"blue"`, etc.
+///
+/// Serializes RGB colors as hex, named colors as lowercase strings.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Color(pub RatatuiColor);
 
@@ -39,70 +50,41 @@ impl std::str::FromStr for Color {
     }
 }
 
+impl Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self.0 {
+            RatatuiColor::Rgb(r, g, b) => &format!("#{:02X}{:02X}{:02X}", r, g, b),
+            RatatuiColor::Reset => "reset",
+            RatatuiColor::Black => "black",
+            RatatuiColor::Red => "red",
+            RatatuiColor::Green => "green",
+            RatatuiColor::Yellow => "yellow",
+            RatatuiColor::Blue => "blue",
+            RatatuiColor::Magenta => "magenta",
+            RatatuiColor::Cyan => "cyan",
+            RatatuiColor::Gray => "gray",
+            RatatuiColor::White => "white",
+            _ => "reset", // fallback
+        };
+
+        write!(f, "{}", s)
+    }
+}
+
 impl<'de> Deserialize<'de> for Color {
     fn deserialize<D>(deserializer: D) -> Result<Color, D::Error>
     where
         D: Deserializer<'de>,
     {
-        let color: String = String::deserialize(deserializer)?;
+        let color = String::deserialize(deserializer)?;
+        let color = color.as_str();
 
-        // Parse hex color
-        if color.starts_with('#') {
-            if color.len() != 7 {
-                return Err(D::Error::custom("hex color must be #RRGGBB"));
-            }
-
-            let r = u8::from_str_radix(&color[1..3], 16)
-                .map_err(|_| D::Error::custom(format!("invalid hex '{}'", color)))?;
-            let g = u8::from_str_radix(&color[3..5], 16)
-                .map_err(|_| D::Error::custom(format!("invalid hex '{}'", color)))?;
-            let b = u8::from_str_radix(&color[5..7], 16)
-                .map_err(|_| D::Error::custom(format!("invalid hex '{}'", color)))?;
-
-            return Ok(Color(RatatuiColor::Rgb(r, g, b)));
-        }
-
-        // Parse named color
-        let color = match color.to_lowercase().as_str() {
-            "reset" => RatatuiColor::Reset,
-            "black" => RatatuiColor::Black,
-            "red" => RatatuiColor::Red,
-            "green" => RatatuiColor::Green,
-            "yellow" => RatatuiColor::Yellow,
-            "blue" => RatatuiColor::Blue,
-            "magenta" => RatatuiColor::Magenta,
-            "cyan" => RatatuiColor::Cyan,
-            "gray" | "grey" => RatatuiColor::Gray,
-            "white" => RatatuiColor::White,
-            _ => {
-                return Err(D::Error::custom(format!(
-                    "invalid color '{}', must be #RRGGBB or a color name",
-                    color
-                )));
-            }
-        };
-
-        Ok(Color(color))
+        Color::from_str(color).map_err(|e| serde::de::Error::custom(e))
     }
 }
 
 impl Serialize for Color {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self.0 {
-            RatatuiColor::Rgb(r, g, b) => {
-                serializer.serialize_str(&format!("#{:02X}{:02X}{:02X}", r, g, b))
-            }
-            RatatuiColor::Reset => serializer.serialize_str("reset"),
-            RatatuiColor::Black => serializer.serialize_str("black"),
-            RatatuiColor::Red => serializer.serialize_str("red"),
-            RatatuiColor::Green => serializer.serialize_str("green"),
-            RatatuiColor::Yellow => serializer.serialize_str("yellow"),
-            RatatuiColor::Blue => serializer.serialize_str("blue"),
-            RatatuiColor::Magenta => serializer.serialize_str("magenta"),
-            RatatuiColor::Cyan => serializer.serialize_str("cyan"),
-            RatatuiColor::Gray => serializer.serialize_str("gray"),
-            RatatuiColor::White => serializer.serialize_str("white"),
-            _ => serializer.serialize_str("reset"), // fallback
-        }
+        serializer.serialize_str(self.to_string().as_str())
     }
 }

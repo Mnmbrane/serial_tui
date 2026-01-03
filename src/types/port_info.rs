@@ -1,3 +1,5 @@
+//! Serial port configuration.
+
 use ratatui::style::Color as RatatuiColor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use serialport::{FlowControl, Parity};
@@ -5,12 +7,16 @@ use std::{path::PathBuf, str::FromStr};
 
 use crate::{error::AppError, types::Color};
 
+/// Line ending style for serial communication.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(try_from = "String")]
 pub enum LineEnding {
+    /// Line Feed (`\n`)
     #[default]
     LF,
+    /// Carriage Return (`\r`)
     CR,
+    /// Carriage Return + Line Feed (`\r\n`)
     CRLF,
 }
 
@@ -29,16 +35,28 @@ impl TryFrom<String> for LineEnding {
     }
 }
 
+/// Configuration for a single serial port connection.
+///
+/// Contains all parameters needed to open and communicate with a serial device,
+/// plus display settings like color for the TUI.
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 #[serde(default)]
 pub struct PortInfo {
+    /// Device path (e.g., "/dev/ttyUSB0", "COM3")
     pub path: PathBuf,
+    /// Baud rate in bits per second
     pub baud_rate: u32,
+    /// Number of data bits (5-8)
     pub data_bits: u8,
+    /// Number of stop bits (1-2)
     pub stop_bits: u8,
+    /// Parity checking mode
     pub parity: Parity,
+    /// Flow control mode
     pub flow_control: FlowControl,
+    /// Line ending style for transmitted data
     pub line_ending: LineEnding,
+    /// Display color for this port's output in the TUI
     pub color: Color,
 }
 

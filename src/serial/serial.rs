@@ -1,3 +1,8 @@
+//! SerialTui responsibilities
+//! 1. Configure using toml files
+//! 2. Spawn serial reader and writers
+//! 3. Start logging thread
+//! 4. Start UI(Ratatui)
 use std::{
     sync::{Arc, RwLock},
     thread,
@@ -13,7 +18,9 @@ impl Serial {
     pub fn new(port_map: PortMap) -> Self {
         Self { port_map }
     }
-    pub fn setup_ports(self) -> Result<Self, AppError> {
+
+    /// Spawn ports an
+    pub fn start_(self) -> Result<Self, AppError> {
         let spawn_port = |port: Arc<RwLock<PortMap>>| {
             let port = port.clone();
 
