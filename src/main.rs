@@ -1,11 +1,11 @@
 //! SerialTUI entry point.
 //!
 //! Sets up the async runtime, creates channels between components,
-//! spawns background tasks, and runs the UI loop.
+//! spawns background tasks, and runs the ratatui UI loop.
 //!
 //! ## Tasks spawned
-//! - Serial handler (manages port tasks)
-//! - Display buffer updater (broadcast -> AppState)
+//! - Serial handler (manages port I/O tasks)
+//! - Ratatui UI (renders AppState to terminal)
 //! - Logger (broadcast -> log files)
 //! - Notification system (queue -> AppState)
 //!
@@ -24,6 +24,12 @@ fn main() -> Result<(), AppError> {
 
     // Create serial handler and give port mapping to it
     let serial_handler = Serial::new(port_map);
+
+    // Create Notification System
+
+    // Create Logger
+
+    // Start UI(Ratatui)
 
     Ok(())
 }

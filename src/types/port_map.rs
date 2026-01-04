@@ -1,14 +1,21 @@
 //! Thread-safe collection of port configurations.
 
 use serde::{Serialize, Serializer, ser::SerializeMap};
+use serialport::SerialPort;
 use std::{
-    collections::HashMap,
+    collections::{
+        HashMap,
+        hash_map::{self, Iter, Keys},
+    },
     fs::{self, read_to_string},
+    iter,
     path::Path,
-    sync::{Arc, RwLock},
+    ptr::read,
+    sync::{Arc, PoisonError, RwLock},
+    time::Duration,
 };
 
-use crate::{error::AppError, types::PortInfo};
+use crate::{error::AppError, types::port_info::PortInfo};
 
 /// Thread-safe map of named serial port configurations.
 ///
@@ -53,6 +60,54 @@ impl PortMap {
     pub fn insert(&mut self, key: String, port_info: PortInfo) -> Option<Arc<RwLock<PortInfo>>> {
         self.port_map.insert(key, Arc::new(RwLock::new(port_info)))
     }
+
+    pub fn get(&self, name: &str) -> Option<&Arc<RwLock<PortInfo>>> {
+        self.port_map.get(name)
+    }
+
+    pub fn remove(&mut self, name: &str) -> Option<Arc<RwLock<PortInfo>>> {
+        self.port_map.remove(name)
+    }
+
+    pub fn contains_key(&self, name: &str) -> bool {
+        self.port_map.contains_key(name)
+    }
+
+    pub fn len(&self) -> usize {
+        self.port_map.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.port_map.is_empty()
+    }
+
+    pub fn keys(&self) -> Keys<'_, String, Arc<RwLock<PortInfo>>> {
+        self.port_map.keys()
+    }
+
+    pub fn iter(&self) -> Iter<'_, String, Arc<RwLock<PortInfo>>> {
+        self.port_map.iter()
+    }
+
+    pub fn open(&self, name: &str) -> Result<Box<dyn SerialPort>, AppError> {
+        if let Some(port_info) = self.port_map.get(name) {
+            let path = &port_info
+                .read()
+                .map_err(|e| AppError::PortMapInvalidGet(format!("{e}")))?
+                .path;
+            let baud_rate = port_info
+                .read()
+                .map_err(|e| AppError::PortMapInvalidGet(format!("{e}")))?
+                .baud_rate;
+
+            serialport::new(path.to_string_lossy(), baud_rate)
+                .timeout(Duration::from_millis(100))
+                .open()
+                .map_err(|e| AppError::PortMapInvalidGet(format!("{e}")))
+        } else {
+            Err(AppError::PortMapInvalidOpen("Could not open ".into()))
+        }
+    }
 }
 
 impl Serialize for PortMap {
@@ -74,10 +129,9 @@ impl Serialize for PortMap {
 
 #[cfg(test)]
 mod test {
-    use crate::types::{Color, port_info::LineEnding};
+    use crate::types::{color::Color, port_info::LineEnding};
 
     use super::*;
-    use serialport::{FlowControl, Parity};
     use std::{io::Write, path::PathBuf, str::FromStr};
     use tempfile::{NamedTempFile, tempdir};
 
@@ -94,10 +148,6 @@ mod test {
         PortInfo {
             path: PathBuf::from("/dev/ttyUSB0"),
             baud_rate: 115200,
-            data_bits: 8,
-            stop_bits: 1,
-            parity: Parity::None,
-            flow_control: FlowControl::None,
             line_ending: LineEnding::CRLF,
             color: Color::from_str("green").unwrap(),
         }
@@ -121,20 +171,12 @@ mod test {
 [port1]
 path = "/dev/ttyUSB0"
 baud_rate = 115200
-data_bits = 8
-stop_bits = 1
-parity = "None"
-flow_control = "None"
 line_ending = "crlf"
 color = "green"
 
 [port2]
 path = "/dev/ttyUSB1"
 baud_rate = 9600
-data_bits = 7
-stop_bits = 2
-parity = "Even"
-flow_control = "Hardware"
 line_ending = "lf"
 color = "#FF8000"
         "##,
@@ -162,7 +204,6 @@ path = "/dev/ttyUSB0"
         let port = config.port_map.get("port1").unwrap().read().unwrap();
         assert_eq!(port.path, PathBuf::from("/dev/ttyUSB0"));
         assert_eq!(port.baud_rate, PortInfo::default().baud_rate);
-        assert_eq!(port.data_bits, PortInfo::default().data_bits);
     }
 
     #[test]
@@ -244,10 +285,6 @@ color = "invalid_color"
         let full_port = PortInfo {
             path: PathBuf::from("/dev/ttyACM0"),
             baud_rate: 9600,
-            data_bits: 7,
-            stop_bits: 2,
-            parity: Parity::Even,
-            flow_control: FlowControl::Hardware,
             line_ending: LineEnding::LF,
             color: Color(ratatui::style::Color::Rgb(1, 2, 3)),
         };

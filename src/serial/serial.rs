@@ -1,14 +1,20 @@
-//! SerialTui responsibilities
-//! 1. Configure using toml files
-//! 2. Spawn serial reader and writers
-//! 3. Start logging thread
-//! 4. Start UI(Ratatui)
+use core::error;
+//
 use std::{
     sync::{Arc, RwLock},
-    thread,
+    thread::{self, JoinHandle},
+    time::Duration,
 };
 
-use crate::{error::AppError, types::port_map::PortMap};
+use serialport::SerialPort;
+
+use crate::{
+    error::AppError,
+    types::{
+        port_info::{self, PortInfo},
+        port_map::{self, PortMap},
+    },
+};
 
 pub struct Serial {
     port_map: PortMap,
@@ -19,17 +25,26 @@ impl Serial {
         Self { port_map }
     }
 
-    /// Spawn ports an
-    pub fn start_(self) -> Result<Self, AppError> {
-        let spawn_port = |port: Arc<RwLock<PortMap>>| {
-            let port = port.clone();
+    fn spawn_reader(&self, port: Arc<RwLock<PortInfo>>) -> JoinHandle<()> {
+        let port = port.clone();
+        thread::spawn(move || {
+            loop {
+                let port_info: PortInfo = port.read().unwrap().clone();
+            }
+        })
+    }
 
-            // spawn readers
-            thread::spawn(move || {});
+    fn spawn_writer(&self, port: Arc<RwLock<PortInfo>>) -> JoinHandle<()> {
+        let port = port.clone();
+        thread::spawn(move || loop {})
+    }
 
-            // spawn writers
-        };
+    /// Iterate through the port map and start each port
+    /// This is usually done right after new
+    pub fn start_ports(&self) {}
 
+    // Starts reader and writer threads.
+    pub fn add_port_and_start(&self) -> Result<&Self, AppError> {
         Ok(self)
     }
 }

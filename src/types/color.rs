@@ -24,7 +24,7 @@ impl std::str::FromStr for Color {
         // Hex color
         if s.starts_with('#') {
             if s.len() != 7 {
-                return Err(AppError::InvalidColor("hex color must be #RRGGBB"));
+                return Err(AppError::InvalidColor("hex color must be #RRGGBB".into()));
             }
             let r = u8::from_str_radix(&s[1..3], 16).map_err(|e| AppError::ParseIntError(e))?;
             let g = u8::from_str_radix(&s[3..5], 16).map_err(|e| AppError::ParseIntError(e))?;
@@ -44,7 +44,7 @@ impl std::str::FromStr for Color {
             "cyan" => RatatuiColor::Cyan,
             "gray" | "grey" => RatatuiColor::Gray,
             "white" => RatatuiColor::White,
-            _ => return Err(AppError::InvalidColor("unknown color '{}'")),
+            _ => return Err(AppError::InvalidColor("unknown color '{}'".into())),
         };
         Ok(Color(color))
     }
