@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::{num::ParseIntError, sync::PoisonError};
 
 use serde::{Deserializer, ser};
 
@@ -14,9 +14,15 @@ pub enum AppError {
     InvalidColor(String),
     InvalidLineEnding(String),
     ParseIntError(ParseIntError),
+    PoisonError(String),
 
     PortMapInvalidGet(String),
-    PortMapInvalidOpen(String),
+
+    PortHandleInvalidOpen(String),
+    PortHandleInvalidWrite(String),
+    PortHandleInvalidRead(String),
+
+    SerialOpenError(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -33,8 +39,14 @@ impl std::fmt::Display for AppError {
             InvalidColor(e) => write!(f, "Invalid color: {e}"),
             InvalidLineEnding(e) => write!(f, "Invalide Line Ending: {e}"),
             ParseIntError(e) => write!(f, "Invalid number: {e}"),
+            PoisonError(e) => write!(f, "LockPoisonError: {e}"),
             PortMapInvalidGet(e) => write!(f, "Port Map Invalid Get: {e}"),
-            PortMapInvalidOpen(e) => write!(f, "Port Map Invalid Open: {e}"),
+
+            PortHandleInvalidOpen(e) => write!(f, "Port Map Invalid Open: {e}"),
+            PortHandleInvalidWrite(e) => write!(f, "Port Map Invalid Write: {e}"),
+            PortHandleInvalidRead(e) => write!(f, "Port Map Invalid Read: {e}"),
+
+            SerialOpenError(e) => write!(f, "Tried to open a serial port: {e}"),
         }
     }
 }
@@ -45,14 +57,20 @@ impl From<std::io::Error> for AppError {
     }
 }
 
+impl<T> From<PoisonError<T>> for AppError {
+    fn from(value: PoisonError<T>) -> Self {
+        AppError::PoisonError(value.to_string())
+    }
+}
+
 impl From<toml::de::Error> for AppError {
     fn from(e: toml::de::Error) -> Self {
-        AppError::InvalidDeserialize(format!("Error trying to deserialize: {e}"))
+        AppError::InvalidDeserialize(e.to_string())
     }
 }
 
 impl From<toml::ser::Error> for AppError {
     fn from(e: toml::ser::Error) -> Self {
-        AppError::InvalidSerialize(format!("Error trying to serialize: {e}"))
+        AppError::InvalidSerialize(e.to_string())
     }
 }
