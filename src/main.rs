@@ -16,11 +16,11 @@ mod error;
 mod serial;
 mod types;
 
-use crate::{error::AppError, serial::Serial};
+use crate::{error::AppError, serial::SerialManager};
 
 fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
-    let serial_handler = Serial::from_file("config/ports.toml");
+    let SerialManager = SerialManager::from_file("config/ports.toml");
 
     // Create Notification System
 

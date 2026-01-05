@@ -23,6 +23,7 @@ pub enum AppError {
     PortHandleInvalidRead(String),
 
     SerialOpenError(String),
+    SerialBroadcastError(String),
 }
 
 impl std::fmt::Display for AppError {
@@ -47,6 +48,7 @@ impl std::fmt::Display for AppError {
             PortHandleInvalidRead(e) => write!(f, "Port Map Invalid Read: {e}"),
 
             SerialOpenError(e) => write!(f, "Tried to open a serial port: {e}"),
+            SerialBroadcastError(e) => write!(f, "Tried to broadcast: {e}"),
         }
     }
 }
