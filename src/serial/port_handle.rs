@@ -1,12 +1,8 @@
 use std::{path::PathBuf, time::Duration};
 
-use serde::{Deserialize, Serialize};
 use serialport::SerialPort;
 
-use crate::{
-    error::AppError,
-    serial::{PortInfo, port_info},
-};
+use crate::error::AppError;
 
 // Port handle contains connection info
 // about the serial port

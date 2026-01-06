@@ -20,7 +20,7 @@ use crate::{error::AppError, serial::SerialManager};
 
 fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
-    let SerialManager = SerialManager::from_file("config/ports.toml");
+    let SerialManager = SerialManager::from_file("config/ports.toml")?;
 
     // Create Notification System
 
