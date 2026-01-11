@@ -16,7 +16,7 @@ mod error;
 mod serial;
 mod types;
 
-use crate::{error::AppError, serial::SerialManager};
+use crate::{error::AppError, serial::serial_manager::SerialManager};
 
 fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it

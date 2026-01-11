@@ -1,6 +1,4 @@
-pub mod port_handle;
-pub mod port_info;
+pub mod port_connection;
+mod port_handle;
+mod port_info;
 pub mod serial_manager;
-pub use port_handle::PortHandle;
-pub use port_info::PortInfo;
-pub use serial_manager::SerialManager;

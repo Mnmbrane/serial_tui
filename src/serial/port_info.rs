@@ -2,13 +2,14 @@
 
 use ratatui::style::Color as RatatuiColor;
 use serde::{Deserialize, Serialize};
-use serialport::SerialPort;
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use crate::{error::AppError, types::color::Color};
 
 /// Line ending style for serial communication.
-#[serde(try_from = "String")]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum LineEnding {
     /// Line Feed (`\n`)
@@ -37,7 +38,7 @@ impl TryFrom<String> for LineEnding {
 ///
 /// Contains all parameters needed to open and communicate with a serial device,
 /// plus display settings like color for the TUI.
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct PortInfo {
     /// Device path (e.g., "/dev/ttyUSB0", "COM3")
@@ -48,6 +49,15 @@ pub struct PortInfo {
     pub line_ending: LineEnding,
     /// Display color for this port's output in the TUI
     pub color: Color,
+}
+
+impl PartialEq for PortInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+            && self.baud_rate == other.baud_rate
+            && self.line_ending == other.line_ending
+            && self.color == other.color
+    }
 }
 
 impl Default for PortInfo {
