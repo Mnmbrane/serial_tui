@@ -26,4 +26,6 @@ pub enum AppError {
     PortConfigSaveError,
     #[error("Cloning port failed")]
     PortCloneFailed,
+    #[error("Lock Poisoned")]
+    LockPoisoned,
 }

@@ -18,9 +18,11 @@ mod types;
 
 use crate::{error::AppError, serial::serial_manager::SerialManager};
 
-fn main() -> Result<(), AppError> {
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
-    let SerialManager = SerialManager::from_file("config/ports.toml")?;
+    let mut serial_manager = SerialManager::new();
+    serial_manager.from_file("config/ports.toml")?;
 
     // Create Notification System
 

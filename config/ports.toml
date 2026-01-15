@@ -18,16 +18,16 @@
 #   color        = "white"        # named color or hex "#RRGGBB"
 
 [com1]
-path = "/dev/ttyV0"
+path = "/tmp/ttyV0"
 baud_rate = 115200
 color = "green"
 
 [com2]
-path = "/dev/ttyV1"
+path = "/tmp/ttyV1"
 baud_rate = 115200
 color = "#FF5733"
 
 [com3]
-path = "/dev/ttyV3"
+path = "/tmp/ttyV2"
 baud_rate = 115200
 color = "red"

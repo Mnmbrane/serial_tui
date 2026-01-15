@@ -17,7 +17,7 @@
 - [x] Config file parser (load config/config.toml)
       * Just use io read/write and toml to parse
 - [x] Config validation (unique names/paths, notify on error)
-- [ ] Config save functionality
+- [x] Config save functionality
 - [ ] Default value generation (random unique colors)
 - [ ] Macro file parser (load config/macros.toml)
 

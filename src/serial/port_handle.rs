@@ -2,7 +2,7 @@ use std::{path::PathBuf, time::Duration};
 
 use serialport::SerialPort;
 
-use crate::{error::AppError, serial::port_handle};
+use crate::error::AppError;
 
 // Port handle contains connection info
 // about the serial port
