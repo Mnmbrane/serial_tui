@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc, Mutex,
-        mpsc::{self, Receiver, Sender},
-    },
+    sync::mpsc::{self, Receiver, Sender},
     thread::{self, JoinHandle},
 };
 

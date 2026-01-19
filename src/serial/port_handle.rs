@@ -17,10 +17,6 @@ impl PortHandle {
     }
 
     pub fn open(self, path: &PathBuf, baud_rate: u32) -> Result<Self, AppError> {
-        serialport::new(path.to_string_lossy(), baud_rate)
-            .timeout(Duration::MAX)
-            .open()?;
-
         Ok(self)
     }
 

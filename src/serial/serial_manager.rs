@@ -22,6 +22,8 @@ type PortConnectionMap = HashMap<String, Arc<Mutex<PortConnection>>>;
 pub struct SerialManager {
     port_conn_map: PortConnectionMap,
     writer_tx: Option<Sender<PortEvent>>,
+
+    /// Broadcast out to clients
     broadcast: Option<broadcast::Sender<PortEvent>>,
 }
 
