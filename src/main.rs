@@ -15,18 +15,26 @@
 mod error;
 mod serial;
 mod types;
+mod ui;
 
-use tokio::sync::broadcast;
+use std::sync::Arc;
 
 use crate::{
     error::AppError,
     serial::{port_connection::PortEvent, serial_manager::SerialManager},
+    ui::Ui,
 };
 
 fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
     let mut serial_manager = SerialManager::new();
-    serial_manager.from_file("config/ports.toml")?;
+    serial_manager
+        .from_file("config/ports.toml")
+        .unwrap_or_else(|e| eprintln!("{e}"));
+
+    // Start UI(ratatui)
+    let mut ui = Ui::new(Arc::new(serial_manager));
+    ui.run()?;
 
     // Create Logger
 

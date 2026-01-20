@@ -22,8 +22,7 @@ impl PortHandle {
         self.handle = Some(
             serialport::new(path.to_string_lossy(), baud_rate)
                 .timeout(Duration::from_millis(1000))
-                .open()
-                .expect("Failed to open port"),
+                .open()?,
         );
         Ok(self)
     }

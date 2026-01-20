@@ -81,7 +81,7 @@ impl SerialManager {
     }
 
     pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
-        let data = Arc::new(data);
+        let data = Arc::new(data.to_vec());
         for key in keys {
             self.writer_map
                 .get(key)
