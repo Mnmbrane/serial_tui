@@ -8,6 +8,8 @@ pub enum AppError {
     InvalidIO(#[from] std::io::Error),
     #[error("No port handle")]
     NoPortHandleError,
+    #[error("No broadcast channel")]
+    NoBroadcastChannel,
     #[error("Toml serial error: {0}")]
     InvalidSerialize(#[from] toml::ser::Error),
     #[error("Toml deserial error: {0}")]

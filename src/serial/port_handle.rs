@@ -16,14 +16,25 @@ impl PortHandle {
         Self { handle: None }
     }
 
-    pub fn open(self, path: &PathBuf, baud_rate: u32) -> Result<Self, AppError> {
+    /// Open serial port and set handle
+    pub fn open(mut self, path: &PathBuf, baud_rate: u32) -> Result<Self, AppError> {
+        // Open a port
+        self.handle = Some(
+            serialport::new(path.to_string_lossy(), baud_rate)
+                .timeout(Duration::from_millis(1000))
+                .open()
+                .expect("Failed to open port"),
+        );
         Ok(self)
     }
 
+    /// Close serial port
     pub fn close(&mut self) {
         self.handle = None; // Drop and closes the port
     }
 
+    /// Check if open
+    /// @return false if not open
     pub fn is_open(&self) -> bool {
         self.handle.is_some()
     }

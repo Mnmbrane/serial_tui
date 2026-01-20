@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     fs::read_to_string,
     path::Path,
-    sync::{Arc, Mutex, mpsc::Sender},
+    sync::{Arc, Mutex, mpsc},
 };
 
 use tokio::sync::broadcast;
@@ -21,10 +21,10 @@ type PortConnectionMap = HashMap<String, Arc<Mutex<PortConnection>>>;
 /// Clients can ask to get a reader/writer to a handle
 pub struct SerialManager {
     port_conn_map: PortConnectionMap,
-    writer_tx: Option<Sender<PortEvent>>,
+    writer_tx: Option<mpsc::Sender<PortEvent>>,
 
     /// Broadcast out to clients
-    broadcast: Option<broadcast::Sender<PortEvent>>,
+    broadcast: broadcast::Sender<Arc<PortEvent>>,
 }
 
 // Serial Manager Responsibilities
@@ -33,10 +33,11 @@ pub struct SerialManager {
 // 3. Open all writers/readers for serial ports
 impl SerialManager {
     pub fn new() -> Self {
+        let (tx, rx) = broadcast::channel::<Arc<PortEvent>>(1024);
         Self {
             port_conn_map: HashMap::new(),
             writer_tx: None,
-            broadcast: None,
+            broadcast: tx,
         }
     }
     /// Load port configurations from a TOML file.
@@ -48,7 +49,7 @@ impl SerialManager {
         for (name, port_info) in
             toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
         {
-            self.open_connection(name, port_info)?;
+            self.open(name, port_info)?;
         }
         Ok(())
     }
@@ -56,12 +57,13 @@ impl SerialManager {
     /// Create map with port connections
     /// Open port connection based on port info
     /// Create channels to write to serial ports or read from all serial ports
-    pub fn open_connection(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
+    pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
         // Start each connection
         // spawns the reader and writers
         let mut port_connection = PortConnection::new();
 
-        let (tx, rx) = port_connection.open(port_info)?;
+        // Get the writer
+        let tx = port_connection.open(port_info, self.broadcast.clone())?;
         self.writer_tx = Some(tx);
 
         // Insert connection into a map

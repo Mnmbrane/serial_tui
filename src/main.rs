@@ -16,10 +16,14 @@ mod error;
 mod serial;
 mod types;
 
-use crate::{error::AppError, serial::serial_manager::SerialManager};
+use tokio::sync::broadcast;
 
-#[tokio::main]
-async fn main() -> Result<(), AppError> {
+use crate::{
+    error::AppError,
+    serial::{port_connection::PortEvent, serial_manager::SerialManager},
+};
+
+fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
     let mut serial_manager = SerialManager::new();
     serial_manager.from_file("config/ports.toml")?;
