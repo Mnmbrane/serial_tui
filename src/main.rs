@@ -28,9 +28,9 @@ fn main() -> Result<(), AppError> {
     let mut serial_manager = SerialManager::new();
     serial_manager.from_file("config/ports.toml")?;
 
-    // Create Notification System
-
     // Create Logger
+
+    // Create Notification System
 
     // Start UI(Ratatui)
 

@@ -63,7 +63,7 @@ impl PortConnection {
         &mut self,
         info: PortInfo,
         broadcast_channel: broadcast::Sender<Arc<PortEvent>>,
-    ) -> Result<mpsc::Sender<PortEvent>, AppError> {
+    ) -> Result<mpsc::Sender<Arc<Vec<u8>>>, AppError> {
         let (writer_tx, writer_rx) = mpsc::channel();
 
         // open a port handle
@@ -125,15 +125,16 @@ impl PortConnection {
     }
 
     /// Spawn writer thread for a particular port name
-    fn spawn_writer(mut port_handle: PortHandle, receiver: Receiver<PortEvent>) -> JoinHandle<()> {
+    fn spawn_writer(
+        mut port_handle: PortHandle,
+        receiver: Receiver<Arc<Vec<u8>>>,
+    ) -> JoinHandle<()> {
         // Spawn a thread to read serial port
         // Move the port handle into here
         thread::spawn(move || {
             // While there is a connection to the writer keep thread
-            while let Ok(port_event) = receiver.recv() {
-                if let PortEvent::Data(buf) = port_event {
-                    port_handle.write_all(buf.as_slice());
-                }
+            while let Ok(buf) = receiver.recv() {
+                port_handle.write_all(buf.as_ref());
             }
         })
     }

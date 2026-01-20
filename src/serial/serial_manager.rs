@@ -21,7 +21,8 @@ type PortConnectionMap = HashMap<String, Arc<Mutex<PortConnection>>>;
 /// Clients can ask to get a reader/writer to a handle
 pub struct SerialManager {
     port_conn_map: PortConnectionMap,
-    writer_tx: Option<mpsc::Sender<PortEvent>>,
+
+    writer_map: HashMap<String, mpsc::Sender<Arc<Vec<u8>>>>,
 
     /// Broadcast out to clients
     broadcast: broadcast::Sender<Arc<PortEvent>>,
@@ -33,10 +34,10 @@ pub struct SerialManager {
 // 3. Open all writers/readers for serial ports
 impl SerialManager {
     pub fn new() -> Self {
-        let (tx, rx) = broadcast::channel::<Arc<PortEvent>>(1024);
+        let (tx, _) = broadcast::channel::<Arc<PortEvent>>(1024);
         Self {
             port_conn_map: HashMap::new(),
-            writer_tx: None,
+            writer_map: HashMap::new(),
             broadcast: tx,
         }
     }
@@ -62,20 +63,35 @@ impl SerialManager {
         // spawns the reader and writers
         let mut port_connection = PortConnection::new();
 
-        // Get the writer
-        let tx = port_connection.open(port_info, self.broadcast.clone())?;
-        self.writer_tx = Some(tx);
+        // Get the writer and insert to map
+        self.writer_map.insert(
+            name.clone(),
+            port_connection.open(port_info, self.broadcast.clone())?,
+        );
 
         // Insert connection into a map
         self.port_conn_map
             .insert(name, Arc::new(Mutex::new(port_connection)));
+
         Ok(())
     }
 
-    // TODO: Remove connection from map
-    pub fn remove_connection() {}
+    pub fn subscribe(&self) -> broadcast::Receiver<Arc<PortEvent>> {
+        self.broadcast.subscribe()
+    }
 
-    /// Save all port configurations to a TOML file.
+    pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
+        let data = Arc::new(data);
+        for key in keys {
+            self.writer_map
+                .get(key)
+                .ok_or(AppError::InvalidMapKey)?
+                .send(data.clone())
+                .map_err(|e| AppError::InvalidSend(e))?
+        }
+        Ok(())
+    }
+
     ///
     /// Overwrites the file if it exists. Each port is saved as a separate
     /// `[port_name]` section.

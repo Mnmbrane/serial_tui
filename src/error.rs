@@ -1,4 +1,4 @@
-use std::{io::Error, num::ParseIntError};
+use std::{io::Error, num::ParseIntError, sync::mpsc::SendError};
 
 use thiserror::Error;
 
@@ -8,8 +8,6 @@ pub enum AppError {
     InvalidIO(#[from] std::io::Error),
     #[error("No port handle")]
     NoPortHandleError,
-    #[error("No broadcast channel")]
-    NoBroadcastChannel,
     #[error("Toml serial error: {0}")]
     InvalidSerialize(#[from] toml::ser::Error),
     #[error("Toml deserial error: {0}")]
@@ -30,4 +28,8 @@ pub enum AppError {
     PortCloneFailed,
     #[error("Lock Poisoned")]
     LockPoisoned,
+    #[error("Invalid Send: {0}")]
+    InvalidSend(SendError<std::sync::Arc<Vec<u8>>>),
+    #[error("Invalid Map Key")]
+    InvalidMapKey,
 }
