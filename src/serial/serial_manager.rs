@@ -15,16 +15,17 @@ use crate::{
     },
 };
 
-type PortConnectionMap = HashMap<String, Arc<Mutex<PortConnection>>>;
+/// Holds connection and writer for a single port
+struct ManagedPort {
+    connection: Arc<Mutex<PortConnection>>,
+    writer: mpsc::Sender<Arc<Vec<u8>>>,
+    info: PortInfo,
+}
 
-/// Clients can ask to subscribe to it's broadcast
+/// Clients can ask to subscribe to its broadcast
 /// Clients can ask to get a reader/writer to a handle
 pub struct SerialManager {
-    port_conn_map: PortConnectionMap,
-
-    writer_map: HashMap<String, mpsc::Sender<Arc<Vec<u8>>>>,
-
-    /// Broadcast out to clients
+    ports: HashMap<String, ManagedPort>,
     broadcast: broadcast::Sender<Arc<PortEvent>>,
 }
 
@@ -36,17 +37,16 @@ impl SerialManager {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel::<Arc<PortEvent>>(1024);
         Self {
-            port_conn_map: HashMap::new(),
-            writer_map: HashMap::new(),
+            ports: HashMap::new(),
             broadcast: tx,
         }
     }
+
     /// Load port configurations from a TOML file.
     ///
     /// Appends all ports from the file to this map. The TOML file should have
     /// one `[port_name]` section per port.
     pub fn from_file(&mut self, port_config_path: impl AsRef<Path>) -> Result<(), AppError> {
-        // Iterate through the ports from the config file
         for (name, port_info) in
             toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
         {
@@ -55,23 +55,19 @@ impl SerialManager {
         Ok(())
     }
 
-    /// Create map with port connections
-    /// Open port connection based on port info
-    /// Create channels to write to serial ports or read from all serial ports
+    /// Open a port connection and store it
     pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
-        // Start each connection
-        // spawns the reader and writers
-        let mut port_connection = PortConnection::new();
+        let mut connection = PortConnection::new();
+        let writer = connection.open(port_info.clone(), self.broadcast.clone())?;
 
-        // Get the writer and insert to map
-        self.writer_map.insert(
-            name.clone(),
-            port_connection.open(port_info, self.broadcast.clone())?,
+        self.ports.insert(
+            name,
+            ManagedPort {
+                connection: Arc::new(Mutex::new(connection)),
+                writer,
+                info: port_info,
+            },
         );
-
-        // Insert connection into a map
-        self.port_conn_map
-            .insert(name, Arc::new(Mutex::new(port_connection)));
 
         Ok(())
     }
@@ -80,19 +76,41 @@ impl SerialManager {
         self.broadcast.subscribe()
     }
 
+    /// Get list of port names
+    pub fn get_port_names(&self) -> Vec<String> {
+        self.ports.keys().cloned().collect()
+    }
+
+    /// Get port info by name
+    pub fn get_port_info(&self, name: &str) -> Option<&PortInfo> {
+        self.ports.get(name).map(|p| &p.info)
+    }
+
+    /// Check if port exists
+    pub fn has_port(&self, name: &str) -> bool {
+        self.ports.contains_key(name)
+    }
+
+    /// Send data to specified ports
     pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
-        let data = Arc::new(data.to_vec());
+        let data = Arc::new(data);
         for key in keys {
-            self.writer_map
+            self.ports
                 .get(key)
                 .ok_or(AppError::InvalidMapKey)?
+                .writer
                 .send(data.clone())
-                .map_err(|e| AppError::InvalidSend(e))?
+                .map_err(|e| AppError::InvalidSend(e))?;
         }
         Ok(())
     }
 
-    ///
+    /// Close a port by name
+    pub fn close(&mut self, name: &str) -> Result<(), AppError> {
+        self.ports.remove(name);
+        Ok(())
+    }
+
     /// Overwrites the file if it exists. Each port is saved as a separate
     /// `[port_name]` section.
     pub fn save(&mut self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {

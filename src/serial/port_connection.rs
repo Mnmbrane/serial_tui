@@ -108,15 +108,15 @@ impl PortConnection {
                 match reader_handle.read(buf) {
                     Ok(0) => {
                         // Disconnected but retry
-                        broadcast.send(Arc::new(PortEvent::Disconnected));
+                        let _ = broadcast.send(Arc::new(PortEvent::Disconnected));
                         break;
                     }
                     Ok(n) => {
-                        broadcast.send(Arc::new(PortEvent::Data(buf[..n].to_vec())));
+                        let _ = broadcast.send(Arc::new(PortEvent::Data(buf[..n].to_vec())));
                     }
                     // Break out of the thread if handle is gone
                     Err(e) => {
-                        broadcast.send(Arc::new(PortEvent::Error(e)));
+                        let _ = broadcast.send(Arc::new(PortEvent::Error(e)));
                         break;
                     }
                 }
@@ -134,7 +134,7 @@ impl PortConnection {
         thread::spawn(move || {
             // While there is a connection to the writer keep thread
             while let Ok(buf) = receiver.recv() {
-                port_handle.write_all(buf.as_ref());
+                let _ = port_handle.write_all(buf.as_ref());
             }
         })
     }
