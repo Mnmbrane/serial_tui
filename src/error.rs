@@ -5,7 +5,7 @@
 //! unified error handling with the `?` operator.
 
 use core::error;
-use std::{io::Error, num::ParseIntError, sync::mpsc::SendError};
+use std::{io::Error, num::ParseIntError, string::FromUtf8Error, sync::mpsc::SendError};
 
 use thiserror::Error;
 
@@ -43,4 +43,6 @@ pub enum AppError {
     InvalidSend(SendError<std::sync::Arc<Vec<u8>>>),
     #[error("Invalid Map Key")]
     InvalidMapKey,
+    #[error("Invalid Map Key: {0}")]
+    PushToDisplayError(FromUtf8Error),
 }

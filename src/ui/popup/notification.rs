@@ -63,7 +63,7 @@ impl Notification {
         self.message.is_some()
     }
 
-    /// Checks if the notification should auto-dismiss.
+    /// Checks if the notification should dismiss.
     ///
     /// Call this each frame (or during render) to handle timing.
     pub fn tick(&mut self) {

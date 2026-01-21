@@ -39,11 +39,9 @@ impl ConfigBar {
         let block = focused_block(" Config ", focused);
 
         let content = Line::from(vec![
-            Span::styled("p", Style::default().fg(Color::Yellow)),
-            Span::styled("orts", Style::default().fg(Color::Cyan)),
-            Span::raw("  "),
-            Span::styled("a", Style::default().fg(Color::Yellow)),
-            Span::styled("dd", Style::default().fg(Color::Green)),
+            Span::styled("Select ", Style::default().fg(Color::Cyan)),
+            Span::styled("P", Style::default().fg(Color::Yellow)),
+            Span::styled("orts ", Style::default().fg(Color::Cyan)),
         ]);
 
         let paragraph = Paragraph::new(content).block(block);

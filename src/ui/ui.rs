@@ -4,17 +4,18 @@
 //! keyboard input to the appropriate component based on focus and
 //! popup visibility.
 
-use std::{io, sync::Arc};
+use std::{fmt::format, io, sync::Arc};
 
 use crossterm::{
-    event::{self, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
-    terminal::{EnterAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
 };
+use serde::de::Error;
 use tokio::sync::broadcast;
 
 use crate::{
@@ -65,6 +66,9 @@ pub struct Ui {
     /// Currently focused widget
     focus: Focus,
 
+    /// Cached display height for key handling
+    display_height: usize,
+
     /// Set to true to exit the application
     exit: bool,
 }
@@ -86,6 +90,7 @@ impl Ui {
             send_group_popup: SendGroupPopup::new(),
             notification_popup: Notification::new(),
             focus: Focus::InputBar,
+            display_height: 0,
             exit: false,
         }
     }
@@ -106,7 +111,9 @@ impl Ui {
             self.handle_events()?;
         }
 
-        ratatui::restore();
+        // Restore terminal state
+        disable_raw_mode()?;
+        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
         Ok(())
     }
 
@@ -123,6 +130,9 @@ impl Ui {
                 Constraint::Length(3), // input bar
             ])
             .split(frame.area());
+
+        // Cache display height for key handling
+        self.display_height = chunks[1].height.saturating_sub(2) as usize; // minus borders
 
         // Render main widgets with focus indication
         self.config_bar
@@ -145,7 +155,6 @@ impl Ui {
 
         if self.notification_popup.is_visible() {
             self.notification_popup.render(frame);
-            self.notification_popup.tick();
         }
     }
 
@@ -154,6 +163,27 @@ impl Ui {
     /// Uses 16ms timeout (~60fps) for responsive UI updates.
     /// Only processes key press events (ignores key release).
     pub fn handle_events(&mut self) -> Result<(), AppError> {
+        while let Ok(event) = self.serial_rx.try_recv() {
+            match event.as_ref() {
+                PortEvent::Data(items) => {
+                    let text = String::from_utf8_lossy(items).into_owned();
+                    self.display.push_line(text);
+                }
+                PortEvent::Error(app_error) => {
+                    self.notification_popup
+                        .show(format!("Error: {}", app_error));
+                }
+                PortEvent::Disconnected(port_name) => self
+                    .notification_popup
+                    .show(format!("Disconnected {}", port_name)),
+                PortEvent::PortAdded(port_name) => self
+                    .notification_popup
+                    .show(format!("Port Added {}", port_name)),
+                PortEvent::PortRemoved(port_name) => self
+                    .notification_popup
+                    .show(format!("Port Removed {}", port_name)),
+            }
+        }
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -218,13 +248,10 @@ impl Ui {
                 }
             }
             Focus::Display => {
-                if let Some(action) = self.display.handle_key(key) {
+                if let Some(action) = self.display.handle_key(key, self.display_height) {
                     match action {
                         DisplayAction::FocusInput => {
                             self.set_focus(Focus::InputBar);
-                        }
-                        DisplayAction::Notify(msg) => {
-                            self.notification_popup.show(msg);
                         }
                     }
                 }

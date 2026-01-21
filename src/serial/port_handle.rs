@@ -58,6 +58,13 @@ impl PortHandle {
         }
     }
 
+    pub fn device_name(&self) -> Option<String> {
+        match &self.handle {
+            Some(ser) => ser.name(),
+            None => None,
+        }
+    }
+
     /// Reads bytes from the serial port into the buffer.
     ///
     /// Returns the number of bytes read. Returns `0` on timeout (not an error).
