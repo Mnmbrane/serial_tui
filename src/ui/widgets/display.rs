@@ -2,10 +2,13 @@
 //!
 //! Uses a circular buffer (VecDeque) with 10,000 line limit.
 //! Supports cursor-based scrolling with margin-based auto-scroll.
+//!
+//! Lines are stored as pre-rendered `Line<'static>` for efficiency.
+//! Cursor highlighting is applied at render time.
 
 use std::collections::VecDeque;
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -27,8 +30,8 @@ pub enum DisplayAction {
 /// Uses a VecDeque as a circular buffer for efficient push/pop.
 /// Cursor-based scrolling with 25% margin triggers auto-scroll.
 pub struct Display {
-    /// Circular buffer of display lines (max 10,000)
-    lines: VecDeque<String>,
+    /// Circular buffer of pre-rendered display lines (max 10,000)
+    lines: VecDeque<Line<'static>>,
     /// Current cursor position (absolute index in buffer)
     cursor: usize,
     /// First visible line index
@@ -52,13 +55,15 @@ impl Display {
 
     /// Adds a line to the buffer, removing oldest if at capacity.
     /// Auto-scrolls to bottom by moving cursor to the new line.
-    pub fn push_line(&mut self, line: String) {
+    /// Converts the String to a pre-rendered Line<'static>.
+    pub fn push_line(&mut self, text: String) {
         if self.lines.len() >= Self::MAX_LINES {
             self.lines.pop_front();
             // Adjust view if it was pointing at removed line
             self.view_start = self.view_start.saturating_sub(1);
         }
-        self.lines.push_back(line);
+        // Convert String to owned Line<'static>
+        self.lines.push_back(Line::raw(text));
         // Auto-scroll: move cursor to the last line
         self.cursor = self.lines.len().saturating_sub(1);
     }
@@ -77,6 +82,21 @@ impl Display {
             self.cursor += 1;
             self.adjust_scroll(height);
         }
+    }
+
+    /// Moves cursor up half a page (Ctrl+u).
+    pub fn half_page_up(&mut self, height: usize) {
+        let half = height / 2;
+        self.cursor = self.cursor.saturating_sub(half);
+        self.adjust_scroll(height);
+    }
+
+    /// Moves cursor down half a page (Ctrl+d).
+    pub fn half_page_down(&mut self, height: usize) {
+        let half = height / 2;
+        let max_cursor = self.lines.len().saturating_sub(1);
+        self.cursor = (self.cursor + half).min(max_cursor);
+        self.adjust_scroll(height);
     }
 
     /// Adjusts view_start to keep cursor within scroll margins.
@@ -106,9 +126,13 @@ impl Display {
     }
 
     /// Returns iterator over visible lines for the current view.
-    pub fn visible_lines(&self, height: usize) -> impl Iterator<Item = (usize, &String)> {
+    /// Uses VecDeque::range() for efficient slice-like access.
+    pub fn visible_lines(&self, height: usize) -> impl Iterator<Item = (usize, &Line<'static>)> {
         let end = (self.view_start + height).min(self.lines.len());
-        (self.view_start..end).map(|i| (i, &self.lines[i]))
+        self.lines
+            .range(self.view_start..end)
+            .enumerate()
+            .map(move |(i, line)| (self.view_start + i, line))
     }
 
     /// Renders the display with highlighted cursor line.
@@ -120,20 +144,20 @@ impl Display {
         // Adjust scroll for current height
         self.adjust_scroll(height);
 
-        // Build visible lines with cursor highlight
+        let cursor_style = Style::default()
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD);
+
+        // Build visible lines, applying cursor highlight only to the selected line
         let lines: Vec<Line> = self
             .visible_lines(height)
-            .map(|(idx, text)| {
+            .map(|(idx, line)| {
                 if idx == self.cursor {
-                    // Highlighted cursor line
-                    Line::styled(
-                        text.as_str(),
-                        Style::default()
-                            .bg(Color::DarkGray)
-                            .add_modifier(Modifier::BOLD),
-                    )
+                    // Clone and apply cursor style
+                    line.clone().style(cursor_style)
                 } else {
-                    Line::raw(text.as_str())
+                    // Use pre-rendered line as-is (clone is cheap for Line)
+                    line.clone()
                 }
             })
             .collect();
@@ -146,18 +170,28 @@ impl Display {
     ///
     /// - `j` / `Down` -> Move cursor down
     /// - `k` / `Up` -> Move cursor up
+    /// - `Ctrl+u` -> Half page up
+    /// - `Ctrl+d` -> Half page down
     /// - `Enter` -> Move focus to input bar
     pub fn handle_key(&mut self, key: KeyEvent, height: usize) -> Option<DisplayAction> {
-        match key.code {
-            KeyCode::Char('k') | KeyCode::Up => {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
+                self.half_page_up(height);
+                None
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
+                self.half_page_down(height);
+                None
+            }
+            (_, KeyCode::Char('k') | KeyCode::Up) => {
                 self.move_up(height);
                 None
             }
-            KeyCode::Char('j') | KeyCode::Down => {
+            (_, KeyCode::Char('j') | KeyCode::Down) => {
                 self.move_down(height);
                 None
             }
-            KeyCode::Enter => Some(DisplayAction::FocusInput),
+            (_, KeyCode::Enter) => Some(DisplayAction::FocusInput),
             _ => None,
         }
     }

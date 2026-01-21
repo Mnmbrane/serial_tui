@@ -108,6 +108,7 @@ impl PortConnection {
         thread::spawn(move || {
             // Buffer
             let buf = &mut [0; 1024];
+            let port_name = port_name;
             loop {
                 // read and send buffer
                 match reader_handle.read(buf) {
