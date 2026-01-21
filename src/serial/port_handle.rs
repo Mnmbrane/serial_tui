@@ -27,12 +27,11 @@ impl PortHandle {
 
     /// Opens a serial port at the given path with specified baud rate.
     ///
-    /// Sets a 1 second read timeout. Consumes self and returns a new
-    /// handle with the open port, or an error if the port couldn't be opened.
+    /// Uses 10ms read timeout for responsive behavior without CPU spinning.
     pub fn open(mut self, path: &PathBuf, baud_rate: u32) -> Result<Self, AppError> {
         self.handle = Some(
             serialport::new(path.to_string_lossy(), baud_rate)
-                .timeout(Duration::from_millis(1000))
+                .timeout(Duration::from_millis(10))
                 .open()?,
         );
         Ok(self)
@@ -48,12 +47,16 @@ impl PortHandle {
         self.handle.is_some()
     }
 
-    /// Writes all bytes to the serial port.
+    /// Writes all bytes to the serial port and flushes.
     ///
     /// Returns `NoPortHandleError` if the port is closed.
     pub fn write_all(&mut self, data: &[u8]) -> Result<(), AppError> {
         match &mut self.handle {
-            Some(port) => port.write_all(data).map_err(|e| AppError::InvalidIO(e)),
+            Some(port) => {
+                port.write_all(data).map_err(AppError::InvalidIO)?;
+                port.flush().map_err(AppError::InvalidIO)?;
+                Ok(())
+            }
             None => Err(AppError::NoPortHandleError),
         }
     }

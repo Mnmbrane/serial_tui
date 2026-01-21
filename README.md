@@ -1,14 +1,14 @@
 # SerialTUI
 
-Terminal UI for multi-port serial communication with vim navigation and scripting.
+Terminal UI for multi-port serial communication with vim-style navigation.
 
 ## Features
 
-- **Multi-Port** - Up to 255 ports simultaneously
-- **Vim Navigation** - `j/k`, `gg/G`, `/search`, `y` yank
-- **Scripting** - Automate with `.stui` scripts
-- **Auto-Reconnect** - Exponential backoff on disconnect
-- **Logging** - Combined + per-port log files
+- **Multi-Port Monitoring** - Monitor multiple serial ports with per-port colors
+- **Vim Navigation** - `j/k`, `gg/G`, `Ctrl+u/d`, `/search`, `n/N`
+- **Visual Selection** - `v` to select, `y` to yank to clipboard
+- **Line Buffering** - Complete lines only (splits on `\n` or `\r`)
+- **Configurable** - TOML config with colors and line endings
 
 ## Quick Start
 
@@ -17,49 +17,44 @@ cargo build --release
 ./target/release/serial_tui
 ```
 
+On first run, creates `config/ports.toml`:
+
+```toml
+[device1]
+path = "/dev/ttyUSB0"    # Linux
+# path = "COM3"          # Windows
+baud_rate = 115200
+line_ending = "lf"       # lf, cr, or crlf
+color = "green"          # Named or "#RRGGBB"
+```
+
 ## Keybindings
 
 | Key | Action |
 |-----|--------|
-| `j`/`k` | Scroll down/up |
-| `gg`/`G` | Top/bottom |
-| `Ctrl+d`/`u` | Half-page |
+| `Tab` | Cycle focus |
+| `Esc` | Quit |
+| `j/k` | Scroll down/up |
+| `gg/G` | Top/bottom |
+| `Ctrl+d/u` | Half-page |
 | `/` | Search |
-| `n`/`N` | Next/prev match |
-| `y`/`yy` | Yank |
-| `i` | Insert mode |
-| `:q` | Quit |
-| `:w` | Save config |
-| `:run <script>` | Run script |
+| `n/N` | Next/prev match |
+| `v` | Visual select |
+| `y` | Yank to clipboard |
+| `Ctrl+Space` | Select send ports |
+| `Enter` | Send text |
 
-## Configuration
-
-`config/config.toml`:
-
-```toml
-[[port]]
-name = "GPS"
-path = "/dev/ttyUSB0"
-baud_rate = 115200
-color = "#FF5733"
-```
-
-## Scripting
-
-`scripts/test.stui`:
+## Layout
 
 ```
-sendstr(["GPS"], "PING\n")
-wait(0.5)
-waitstr(["GPS"], r"OK|ACK", 5.0)
++----------------------------------------------------------+
+| Config: [p] Ports                                         |
++----------------------------------------------------------+
+| [12:34:56.789] [com1] Hello from port 1                  |
+| [12:34:56.790] [com2] Response from port 2               |
++----------------------------------------------------------+
+| Input: [ports] type here_                                 |
++----------------------------------------------------------+
 ```
 
-## Documentation
-
-- [Architecture](ARCHITECTURE.md) - System design and data flow
-- [Todo](todo.md) - Task tracking
-- [Learn](learn.md) - Prerequisites for contributors
-
-## Status
-
-In development. See [todo.md](todo.md) for progress.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for technical details.

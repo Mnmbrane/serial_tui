@@ -94,14 +94,10 @@ impl InputBar {
                 self.input.pop();
                 None
             }
-            // Enter sends the message
+            // Enter sends the message (empty sends just line ending)
             (_, KeyCode::Enter) => {
-                if !self.input.is_empty() {
-                    let text = std::mem::take(&mut self.input);
-                    Some(InputBarAction::Send(text))
-                } else {
-                    None
-                }
+                let text = std::mem::take(&mut self.input);
+                Some(InputBarAction::Send(text))
             }
             _ => None,
         }

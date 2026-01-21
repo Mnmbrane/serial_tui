@@ -291,9 +291,14 @@ impl Ui {
                             if selected.is_empty() {
                                 self.notification_popup.show("No ports selected");
                             } else {
-                                let _ = self.serial_manager.send(&selected, text.into_bytes());
-                                self.notification_popup
-                                    .show(format!("Sent to {} port(s)", selected.len()));
+                                match self.serial_manager.send(&selected, text.into_bytes()) {
+                                    Ok(_) => self
+                                        .notification_popup
+                                        .show(format!("Sent to {} port(s)", selected.len())),
+                                    Err(e) => self
+                                        .notification_popup
+                                        .show(format!("Send failed: {}", e)),
+                                }
                             }
                         }
                     }

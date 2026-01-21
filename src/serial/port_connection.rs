@@ -74,18 +74,17 @@ impl PortConnection {
     ) -> Result<mpsc::Sender<Arc<Vec<u8>>>, AppError> {
         let (writer_tx, writer_rx) = mpsc::channel();
 
-        // open a port handle
+        // Open port and create only the handles we need
         let handle = PortHandle::new().open(&info.path, info.baud_rate)?;
+        let writer_handle = handle.try_clone()?;
 
-        self.writer_handle = Some(handle.try_clone()?);
-        self.reader_handle = Some(handle.try_clone()?);
-        // Spawn writers
-        self.writer_thread = Some(PortConnection::spawn_writer(handle.try_clone()?, writer_rx));
+        // Spawn writer thread (gets cloned handle)
+        self.writer_thread = Some(PortConnection::spawn_writer(writer_handle, writer_rx));
 
-        // Spawn readers
+        // Spawn reader thread (gets original handle)
         self.reader_thread = Some(PortConnection::spawn_reader(
             name,
-            handle.try_clone()?,
+            handle,
             broadcast_channel,
         ));
         Ok(writer_tx)

@@ -2,478 +2,156 @@
 
 ## Overview
 
-SerialTUI is a terminal UI for multi-port serial communication with vim-style navigation and scripting.
-
 ```
-+------------------+     +-----------+     +----------------+
-|     UI Task      | --> | Command   | --> | Serial Handler |
-|    (ratatui)     |     | Dispatcher|     | (per-port tasks)
-+------------------+     +-----------+     +-------+--------+
-        ^                                          |
-        |              broadcast channel           |
-        +------------------------------------------+
+┌─────────────┐     ┌─────────────────┐     ┌──────────────┐
+│   UI Task   │────>│  SerialManager  │────>│ PortConnection│
+│  (ratatui)  │     │   (pub/sub)     │     │ (per port)    │
+└─────────────┘     └─────────────────┘     └──────────────┘
+       ^                    │                      │
+       │         broadcast channel                 │
+       └───────────────────────────────────────────┘
 ```
-
----
 
 ## Directory Structure
 
 ```
 src/
-├── main.rs           # Entry point, spawns all tasks
-├── app.rs            # AppState (shared state)
-├── error.rs          # Error types
-├── config/           # Config loading/saving
-├── serial/           # Port tasks, messages, commands
-├── ui/               # Widgets, layout, vim modes
-├── logger/           # File writers
-├── notification/     # Toast system
-└── script/           # Lexer, parser, interpreter
-
-config/
-├── config.toml       # Port definitions
-└── macros.toml       # Keybind macros
-
-scripts/              # User .stui scripts
-logs/                 # Output logs
+├── main.rs              # Entry point, config creation
+├── error.rs             # AppError enum (thiserror)
+│
+├── types/
+│   └── color.rs         # Color wrapper with serde support
+│
+├── serial/
+│   ├── serial_manager.rs   # Multi-port manager, broadcast hub
+│   ├── port_connection.rs  # Reader/writer threads per port
+│   ├── port_handle.rs      # Low-level serialport wrapper
+│   └── port_info.rs        # PortInfo config, LineEnding enum
+│
+└── ui/
+    ├── ui.rs               # Main render loop, event routing
+    ├── widgets/
+    │   ├── config_bar.rs   # Top bar with port controls
+    │   ├── display.rs      # Serial output (vim nav, search, yank)
+    │   └── input_bar.rs    # Text input bar
+    └── popup/
+        ├── notification.rs # Toast messages
+        ├── port_list.rs    # Port selection popup
+        └── send_group.rs   # Send target selection
 ```
-
----
 
 ## Data Flow
 
-### Channels
-
-| Channel | Type | From | To | Purpose |
-|---------|------|------|-----|---------|
-| app_command | mpsc | UI | Dispatcher | User actions (quit, send, run script) |
-| serial_command | mpsc | Dispatcher, Script | Serial Handler | Port operations |
-| serial_broadcast | broadcast | Serial Handler | Display, Logger, Script | All received data |
-| notification | mpsc | Any | Notification System | Toast messages |
-| script_abort | oneshot | Dispatcher | Script Engine | Stop signal |
-
-### Flow Diagram
-
+### Port Opening
 ```
-USER INPUT
-    |
-    v
-+-------------------+
-| UI: handle key    |
-| - vim nav: local  |
-| - :cmd/text: send |
-+-------------------+
-    |
-    | AppCommand (SendText, RunScript, Quit, ...)
-    v
-+-------------------+
-| DISPATCHER        |
-| - translate cmds  |
-| - spawn scripts   |
-| - update state    |
-+-------------------+
-    |
-    | SerialCommand (Send, Connect, Disconnect)
-    v
-+-------------------+
-| SERIAL HANDLER    |
-| - manage ports    |
-| - route writes    |
-+-------------------+
-    |
-    | SerialMessage (per port task)
-    v
-+-------------------+
-| BROADCAST         |----+----+----+
-+-------------------+    |    |    |
-                         v    v    v
-                    Display Logger Script
-                    Updater        (waitstr)
+main.rs
+  └─> SerialManager::from_file(config.toml)
+        └─> SerialManager::open(name, PortInfo)
+              ├─> PortHandle::open(path, baud_rate)
+              ├─> spawn_reader(handle, broadcast_tx)
+              └─> spawn_writer(handle, mpsc_rx)
 ```
 
----
+### Receiving Data
+```
+Serial Port
+  └─> Reader Thread (10ms timeout loop)
+        └─> Buffer bytes until \n or \r
+              └─> broadcast.send(PortEvent::Data)
+                    └─> UI receives via serial_rx
+                          └─> Display::push_line()
+```
+
+### Sending Data
+```
+User types + Enter
+  └─> InputBarAction::Send(text)
+        └─> SerialManager::send(ports, data)
+              └─> Append line_ending per port
+                    └─> mpsc.send() to writer thread
+                          └─> PortHandle::write_all() + flush()
+```
 
 ## Key Components
 
-### Serial Port Task
+### SerialManager
+- Owns all port connections
+- Broadcast channel (capacity: 1024) for received data
+- HashMap<String, ManagedPort> for port lookup
+- `send()` appends configured line ending per port
 
-```
-PSEUDOCODE: run_port_task(config, broadcast_tx, write_rx)
+### PortConnection
+- Spawns reader thread (line-buffered, emits on \n/\r)
+- Spawns writer thread (receives via mpsc, writes + flushes)
+- Uses `Arc<str>` for port names (cheap cloning)
+- Uses `bytes::Bytes` for data (cheap cloning)
 
-    backoff_delay = 1 second
+### Display Widget
+- VecDeque<Line> circular buffer (max 10,000 lines)
+- Cursor-based scrolling with 25% margin auto-scroll
+- Vim navigation: j/k, gg/G, Ctrl+u/d
+- Search mode: /, n/N for matches
+- Visual selection: v to toggle, y to yank
+- Clipboard via arboard (kept alive for Linux)
 
-    loop forever:
-        try:
-            port = open_serial(config.path, config.baud_rate)
-            backoff_delay = 1 second  // reset on success
+### UI Event Loop
+```rust
+while !self.exit {
+    terminal.draw(|f| self.draw(f))?;
 
-            loop:
-                select:
-                    line = read_line(port):
-                        msg = SerialMessage {
-                            timestamp: now(),
-                            port_name: config.name,
-                            port_path: config.path,
-                            data: line
-                        }
-                        broadcast_tx.send(msg)
+    // Process serial events
+    while let Ok(event) = self.serial_rx.try_recv() {
+        // Add to display
+    }
 
-                    data = write_rx.receive():
-                        port.write(data)
-
-        on error:
-            notify("Port disconnected, retrying...")
-            sleep(backoff_delay)
-            backoff_delay = min(backoff_delay * 2, 8 seconds)
-```
-
-### Display Buffer Updater
-
-```
-PSEUDOCODE: display_updater(state, broadcast_rx)
-
-    loop:
-        msg = broadcast_rx.receive()
-
-        lock state:
-            state.display_buffer.push(msg)
-
-            if state.display_buffer.len > 10000:
-                state.display_buffer.pop_front()
+    // Poll keyboard (16ms = ~60fps)
+    if event::poll(Duration::from_millis(16))? {
+        self.handle_key(key);
+    }
+}
 ```
 
-### Command Dispatcher
+## Threading Model
 
 ```
-PSEUDOCODE: command_dispatcher(app_rx, serial_tx, notif_tx, state)
+Main Thread (UI)
+  ├─> Render loop
+  ├─> Keyboard handling
+  └─> Receives from broadcast
 
-    loop:
-        cmd = app_rx.receive()
+Per-Port Reader Thread
+  └─> Loop: read -> buffer -> broadcast on newline
 
-        match cmd:
-            Quit:
-                state.running = false
-                break
-
-            SendText(ports, text):
-                data = text + line_ending
-                serial_tx.send(Send { ports, data })
-
-            RunScript(path):
-                spawn script_engine(path, serial_tx, broadcast, abort_rx)
-                notif_tx.send("Script started")
-
-            StopScript:
-                abort_tx.send(())
-                notif_tx.send("Script aborted")
-
-            ClearDisplay:
-                state.display_buffer.clear()
+Per-Port Writer Thread
+  └─> Loop: recv from mpsc -> write + flush
 ```
 
-### Notification System
+## Configuration
 
-```
-PSEUDOCODE: notification_system(notif_rx, state)
-
-    loop:
-        msg = notif_rx.receive()
-
-        duration = (msg.length / 15) + 1 second  // reading speed
-
-        notification = Notification {
-            message: msg,
-            created_at: now(),
-            duration: duration
-        }
-
-        state.notifications.push(notification)
-```
-
-### UI Render Loop
-
-```
-PSEUDOCODE: ui_loop(terminal, state)
-
-    loop:
-        lock state:
-            terminal.draw(render_ui(state))
-
-            if not state.running:
-                break
-        // lock released
-
-        if poll_input(16ms):  // ~60 FPS
-            event = read_input()
-            handle_key(event, state)
-```
-
----
-
-## Vim Mode State Machine
-
-```
-STATES: Normal, Insert, Command, Search
-FOCUS:  Display, InputBox
-
-TRANSITIONS:
-    Display + Normal:
-        'i'     -> InputBox + Insert
-        ':'     -> Command mode
-        '/'     -> Search mode
-        'j'     -> scroll down
-        'k'     -> scroll up
-        'gg'    -> jump to top
-        'G'     -> jump to bottom
-        Ctrl+d  -> half-page down
-        Ctrl+u  -> half-page up
-        'y'     -> yank selection
-        'n'     -> next search match
-        'N'     -> prev search match
-
-    InputBox + Insert:
-        Esc     -> InputBox + Normal
-        Enter   -> send text, clear input
-        chars   -> append to input
-
-    InputBox + Normal:
-        'i'     -> Insert mode
-        Esc     -> Display + Normal
-        'h'/'l' -> cursor left/right
-        'w'/'b' -> word forward/back
-        'x'     -> delete char
-
-    Command:
-        Enter   -> execute command, return to Normal
-        Esc     -> cancel, return to Normal
-
-    Search:
-        Enter   -> execute search, return to Normal
-        Esc     -> cancel, return to Normal
-```
-
----
-
-## Script Engine (.stui)
-
-### Pipeline
-
-```
-Source Code -> Lexer -> Tokens -> Parser -> AST -> Interpreter -> Execution
-```
-
-### Lexer
-
-```
-INPUT:  "let x = 1 + 2;"
-OUTPUT: [Let, Ident("x"), Equals, Number(1), Plus, Number(2), Semicolon]
-```
-
-### Parser (Recursive Descent)
-
-```
-INPUT:  [Let, Ident("x"), Equals, Number(1), Plus, Number(2), Semicolon]
-OUTPUT: LetStmt {
-            name: "x",
-            value: BinaryOp {
-                left: Number(1),
-                op: Plus,
-                right: Number(2)
-            }
-        }
-```
-
-### Interpreter
-
-```
-PSEUDOCODE: interpret(ast, env, serial_tx, broadcast_rx)
-
-    for stmt in ast:
-        match stmt:
-            Let { name, value }:
-                result = eval_expr(value, env)
-                env.set(name, result)
-
-            If { cond, then, else }:
-                if eval_expr(cond, env) is truthy:
-                    interpret(then, env)
-                else if else exists:
-                    interpret(else, env)
-
-            While { cond, body }:
-                while eval_expr(cond, env) is truthy:
-                    interpret(body, env)
-
-            Expr(call):
-                if call is builtin:
-                    execute_builtin(call, env, serial_tx, broadcast_rx)
-                else:
-                    call user function
-```
-
-### Built-in Functions
-
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `sendstr(ports, text)` | - | Send string to ports |
-| `sendbin(ports, hex)` | - | Send binary data (hex string) |
-| `wait(seconds)` | - | Pause execution |
-| `waitstr(ports, regex, timeout)` | bool | Wait for pattern, true if matched before timeout |
-
----
-
-## Key Data Types
-
-### SerialMessage
-
-```
-timestamp   : DateTime     // when received
-port_name   : String       // display name ("GPS")
-port_path   : String       // system path ("/dev/ttyUSB0")
-data        : String       // line content (no newline)
-```
-
-### DefaultsConfig
-
-```
-baud_rate     115200
-data_bits     8
-stop_bits     1
-parity        none
-flow_control  none
-line_ending   "\n"
-color         green
-```
-
-### PortConfig
-
-```
-name          : String           // required, unique
-path          : String           // required, unique
-baud_rate     : Option<u32>      // falls back to defaults
-data_bits     : Option<u8>
-stop_bits     : Option<u8>
-parity        : Option<String>
-flow_control  : Option<String>
-line_ending   : Option<String>
-color         : Option<String>   // random if not specified
-```
-
-### AppState
-
-```
-port_configs   : Map<name, PortConfig>
-display_buffer : Queue<SerialMessage>   // capped at 10000
-notifications  : Queue<Notification>
-selected_ports : Set<String>            // ports to send to
-scroll_offset  : usize
-cursor_line    : usize                  // selected line in display
-input_text     : String
-input_cursor   : usize                  // cursor position in input
-search_query   : String
-vim_mode       : VimMode
-focus          : Focus
-running        : bool
-```
-
----
-
-## Config File Format
-
-### config/config.toml
-
+### config/ports.toml
 ```toml
-[[port]]
-name = "GPS"
+[port_name]
 path = "/dev/ttyUSB0"
-color = "#FF5733"
-# uses all defaults
-
-[[port]]
-name = "Motor"
-path = "/dev/ttyUSB1"
-baud_rate = 9600
-line_ending = "\r\n"
-flow_control = "hardware"
+baud_rate = 115200
+line_ending = "lf"      # lf, cr, crlf
+color = "green"         # or "#RRGGBB"
 ```
 
-### config/macros.toml
-
-```toml
-[[macro]]
-name = "ping_all"
-key = "F1"
-command = "sendstr([\"GPS\", \"Motor\"], \"PING\\n\")"
-```
-
----
-
-## Log Format
-
-```
-<2025-01-15 14:32:01.123>[GPS] NMEA: $GPGGA,123456...
-<2025-01-15 14:32:01.456>[Motor] RPM: 1500
-```
-
-Files:
-
-- `logs/all.log` - combined (all ports)
-- `logs/<port_name>.log` - per-port
-
----
-
-## Error Handling
-
-### Strategy
-
-- Config errors: notify user, continue with defaults
-- Serial errors: auto-reconnect with backoff
-- Script errors: abort script, notify user
-- Channel errors: log and continue (indicates shutdown)
-
-### Backoff Pattern
-
-```
-Attempt 1: wait 1s
-Attempt 2: wait 2s
-Attempt 3: wait 4s
-Attempt 4+: wait 8s (capped)
-On success: reset to 1s
-```
-
----
-
-## UI Layout
-
-```
-+---------------------------------------------------------------------+
-| [Port v] [Filter v] [Add Port] [Run Script v]         Notifications |
-+---------------------------------------------------------------------+
-| <14:32:01>[GPS] data line 1...                                      |
-| <14:32:02>[Motor] data line 2...                                    |
-| <14:32:03>[GPS] data line 3...                                      |
-|                                                                     |
-| ~ vim: j/k scroll, /search, y yank                                  |
-+---------------------------------------------------------------------+
-| PREVIEW: selected line with word wrap                               |
-+---------------------------------------------------------------------+
-| [x] GPS   | > input text here_                                      |
-| [ ] Motor |                                                         |
-+-----------+---------------------------------------------------------+
-```
-
----
+### PortInfo Defaults
+- baud_rate: 115200
+- line_ending: LF
+- color: Reset
 
 ## Dependencies
 
 | Crate | Purpose |
 |-------|---------|
-| tokio | Async runtime |
 | ratatui | TUI framework |
 | crossterm | Terminal backend |
-| tokio-serial | Async serial ports |
-| serde + toml | Config parsing |
+| serialport | Serial I/O |
+| tokio | Broadcast channel |
+| serde + toml | Config |
 | chrono | Timestamps |
-| regex | Search + waitstr |
 | arboard | Clipboard |
-| rand | Random colors |
+| bytes | Efficient buffers |
+| thiserror | Error types |
