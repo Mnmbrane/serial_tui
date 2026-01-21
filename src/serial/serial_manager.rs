@@ -81,7 +81,9 @@ impl SerialManager {
     /// broadcasting received data immediately.
     pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
         let mut connection = PortConnection::new();
-        let writer = connection.open(name.clone(), port_info.clone(), self.broadcast.clone())?;
+        // Convert to Arc<str> for cheap cloning in the reader thread
+        let name_arc: Arc<str> = name.clone().into();
+        let writer = connection.open(name_arc, port_info.clone(), self.broadcast.clone())?;
 
         self.ports.insert(
             name,

@@ -9,13 +9,17 @@ use std::{io, sync::Arc};
 use chrono::Local;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span},
 };
 use serde::de::Error;
 use tokio::sync::broadcast;
@@ -170,7 +174,20 @@ impl Ui {
                 PortEvent::Data { port, data } => {
                     let timestamp = Local::now().format("%H:%M:%S%.3f");
                     let text = String::from_utf8_lossy(data);
-                    let line = format!("[{}] [{}] {}", timestamp, port, text);
+
+                    // Look up port color from config
+                    let port_color = self
+                        .serial_manager
+                        .get_port_info(port)
+                        .map(|info| info.color.0)
+                        .unwrap_or(Color::Reset);
+
+                    // Build styled line with colored port name
+                    let line = Line::from(vec![
+                        Span::raw(format!("[{}] ", timestamp)),
+                        Span::styled(format!("[{}]", port), Style::default().fg(port_color)),
+                        Span::raw(format!(" {}", text)),
+                    ]);
                     self.display.push_line(line);
                 }
                 PortEvent::Error(app_error) => {
@@ -256,6 +273,9 @@ impl Ui {
                     match action {
                         DisplayAction::FocusInput => {
                             self.set_focus(Focus::InputBar);
+                        }
+                        DisplayAction::Notify(msg) => {
+                            self.notification_popup.show(msg);
                         }
                     }
                 }

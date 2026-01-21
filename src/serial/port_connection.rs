@@ -6,6 +6,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+use bytes::Bytes;
 use tokio::sync::broadcast::{self};
 
 use crate::{
@@ -17,7 +18,11 @@ use crate::{
 };
 
 pub enum PortEvent {
-    Data { port: String, data: Vec<u8> },
+    /// Data received from a port. Uses Arc<str> and Bytes for cheap cloning.
+    Data {
+        port: Arc<str>,
+        data: Bytes,
+    },
     Error(AppError),
     Disconnected(String),
     PortAdded(String),
@@ -63,7 +68,7 @@ impl PortConnection {
     /// string data to ports
     pub fn open(
         &mut self,
-        name: String,
+        name: Arc<str>,
         info: PortInfo,
         broadcast_channel: broadcast::Sender<Arc<PortEvent>>,
     ) -> Result<mpsc::Sender<Arc<Vec<u8>>>, AppError> {
@@ -99,7 +104,7 @@ impl PortConnection {
 
     /// Helper function to spawn and handle port reading
     fn spawn_reader(
-        port_name: String,
+        port_name: Arc<str>,
         mut reader_handle: PortHandle,
         broadcast: broadcast::Sender<Arc<PortEvent>>,
     ) -> JoinHandle<()> {
@@ -108,7 +113,6 @@ impl PortConnection {
         thread::spawn(move || {
             // Buffer
             let buf = &mut [0; 1024];
-            let port_name = port_name;
             loop {
                 // read and send buffer
                 match reader_handle.read(buf) {
@@ -118,8 +122,10 @@ impl PortConnection {
                     }
                     Ok(n) => {
                         let _ = broadcast.send(Arc::new(PortEvent::Data {
-                            port: port_name.clone(),
-                            data: buf[..n].to_vec(),
+                            // Arc::clone is just a refcount bump - no allocation
+                            port: Arc::clone(&port_name),
+                            // Bytes::copy_from_slice allocates once, but cloning is cheap
+                            data: Bytes::copy_from_slice(&buf[..n]),
                         }));
                     }
                     // Break out of the thread if handle is gone
