@@ -132,16 +132,18 @@ impl SerialManager {
 
     /// Sends data to one or more ports.
     ///
-    /// The data is wrapped in `Arc` for efficient sharing when sending
-    /// to multiple ports. Fails if any port name is not found.
+    /// Appends the configured line ending for each port. Since ports may have
+    /// different line endings, data is built per-port.
     pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
-        let data = Arc::new(data);
         for key in keys {
-            self.ports
-                .get(key)
-                .ok_or(AppError::InvalidMapKey)?
-                .writer
-                .send(data.clone())
+            let port = self.ports.get(key).ok_or(AppError::InvalidMapKey)?;
+
+            // Build data with this port's line ending
+            let mut buf = data.clone();
+            buf.extend_from_slice(port.info.line_ending.as_bytes());
+
+            port.writer
+                .send(Arc::new(buf))
                 .map_err(|e| AppError::InvalidSend(e))?;
         }
         Ok(())

@@ -21,6 +21,17 @@ pub enum LineEnding {
     CRLF,
 }
 
+impl LineEnding {
+    /// Returns the byte representation of this line ending.
+    pub fn as_bytes(&self) -> &'static [u8] {
+        match self {
+            LineEnding::LF => b"\n",
+            LineEnding::CR => b"\r",
+            LineEnding::CRLF => b"\r\n",
+        }
+    }
+}
+
 impl TryFrom<String> for LineEnding {
     type Error = AppError;
 

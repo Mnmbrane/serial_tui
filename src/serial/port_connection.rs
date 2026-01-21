@@ -102,34 +102,48 @@ impl PortConnection {
         Ok(())
     }
 
-    /// Helper function to spawn and handle port reading
+    /// Helper function to spawn and handle port reading.
+    /// Buffers incoming data and emits complete lines (split on \n or \r).
     fn spawn_reader(
         port_name: Arc<str>,
         mut reader_handle: PortHandle,
         broadcast: broadcast::Sender<Arc<PortEvent>>,
     ) -> JoinHandle<()> {
-        // Spawn a thread to read serial port
-        // Move the port handle into here
         thread::spawn(move || {
-            // Buffer
-            let buf = &mut [0; 1024];
+            let mut read_buf = [0u8; 1024];
+            let mut line_buf = Vec::with_capacity(256);
+
             loop {
-                // read and send buffer
-                match reader_handle.read(buf) {
+                match reader_handle.read(&mut read_buf) {
                     Ok(0) => {
                         // Timeout or no data available - continue reading
                         continue;
                     }
                     Ok(n) => {
-                        let _ = broadcast.send(Arc::new(PortEvent::Data {
-                            // Arc::clone is just a refcount bump - no allocation
-                            port: Arc::clone(&port_name),
-                            // Bytes::copy_from_slice allocates once, but cloning is cheap
-                            data: Bytes::copy_from_slice(&buf[..n]),
-                        }));
+                        // Process each byte, emitting lines on \n or \r
+                        for &byte in &read_buf[..n] {
+                            if byte == b'\n' || byte == b'\r' {
+                                // Skip empty lines (handles \r\n sequences)
+                                if !line_buf.is_empty() {
+                                    let _ = broadcast.send(Arc::new(PortEvent::Data {
+                                        port: Arc::clone(&port_name),
+                                        data: Bytes::copy_from_slice(&line_buf),
+                                    }));
+                                    line_buf.clear();
+                                }
+                            } else {
+                                line_buf.push(byte);
+                            }
+                        }
                     }
-                    // Break out of the thread if handle is gone
                     Err(e) => {
+                        // Emit any remaining buffered data before error
+                        if !line_buf.is_empty() {
+                            let _ = broadcast.send(Arc::new(PortEvent::Data {
+                                port: Arc::clone(&port_name),
+                                data: Bytes::copy_from_slice(&line_buf),
+                            }));
+                        }
                         let _ = broadcast.send(Arc::new(PortEvent::Error(e)));
                         break;
                     }
