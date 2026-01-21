@@ -17,7 +17,7 @@ use crate::{
 };
 
 pub enum PortEvent {
-    Data(Vec<u8>),
+    Data { port: String, data: Vec<u8> },
     Error(AppError),
     Disconnected(String),
     PortAdded(String),
@@ -63,6 +63,7 @@ impl PortConnection {
     /// string data to ports
     pub fn open(
         &mut self,
+        name: String,
         info: PortInfo,
         broadcast_channel: broadcast::Sender<Arc<PortEvent>>,
     ) -> Result<mpsc::Sender<Arc<Vec<u8>>>, AppError> {
@@ -78,6 +79,7 @@ impl PortConnection {
 
         // Spawn readers
         self.reader_thread = Some(PortConnection::spawn_reader(
+            name,
             handle.try_clone()?,
             broadcast_channel,
         ));
@@ -97,6 +99,7 @@ impl PortConnection {
 
     /// Helper function to spawn and handle port reading
     fn spawn_reader(
+        port_name: String,
         mut reader_handle: PortHandle,
         broadcast: broadcast::Sender<Arc<PortEvent>>,
     ) -> JoinHandle<()> {
@@ -105,19 +108,18 @@ impl PortConnection {
         thread::spawn(move || {
             // Buffer
             let buf = &mut [0; 1024];
-            let disconn_buf = &mut [0; 64];
             loop {
                 // read and send buffer
                 match reader_handle.read(buf) {
                     Ok(0) => {
-                        // Disconnected but retry
-                        let _ = broadcast.send(Arc::new(PortEvent::Disconnected(
-                            reader_handle.device_name().unwrap_or_default(),
-                        )));
-                        break;
+                        // Timeout or no data available - continue reading
+                        continue;
                     }
                     Ok(n) => {
-                        let _ = broadcast.send(Arc::new(PortEvent::Data(buf[..n].to_vec())));
+                        let _ = broadcast.send(Arc::new(PortEvent::Data {
+                            port: port_name.clone(),
+                            data: buf[..n].to_vec(),
+                        }));
                     }
                     // Break out of the thread if handle is gone
                     Err(e) => {

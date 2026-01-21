@@ -51,14 +51,16 @@ impl Display {
     }
 
     /// Adds a line to the buffer, removing oldest if at capacity.
+    /// Auto-scrolls to bottom by moving cursor to the new line.
     pub fn push_line(&mut self, line: String) {
         if self.lines.len() >= Self::MAX_LINES {
             self.lines.pop_front();
-            // Adjust cursor and view if they were pointing at removed line
-            self.cursor = self.cursor.saturating_sub(1);
+            // Adjust view if it was pointing at removed line
             self.view_start = self.view_start.saturating_sub(1);
         }
         self.lines.push_back(line);
+        // Auto-scroll: move cursor to the last line
+        self.cursor = self.lines.len().saturating_sub(1);
     }
 
     /// Moves cursor up one line.

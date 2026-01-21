@@ -4,7 +4,9 @@
 //! keyboard input to the appropriate component based on focus and
 //! popup visibility.
 
-use std::{fmt::format, io, sync::Arc};
+use std::{io, sync::Arc};
+
+use chrono::Local;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -165,9 +167,11 @@ impl Ui {
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         while let Ok(event) = self.serial_rx.try_recv() {
             match event.as_ref() {
-                PortEvent::Data(items) => {
-                    let text = String::from_utf8_lossy(items).into_owned();
-                    self.display.push_line(text);
+                PortEvent::Data { port, data } => {
+                    let timestamp = Local::now().format("%H:%M:%S%.3f");
+                    let text = String::from_utf8_lossy(data);
+                    let line = format!("[{}] [{}] {}", timestamp, port, text);
+                    self.display.push_line(line);
                 }
                 PortEvent::Error(app_error) => {
                     self.notification_popup
