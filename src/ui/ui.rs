@@ -1,3 +1,9 @@
+//! Main UI orchestrator.
+//!
+//! Owns all widgets and popups, handles the render loop, and routes
+//! keyboard input to the appropriate component based on focus and
+//! popup visibility.
+
 use std::{io, sync::Arc};
 
 use crossterm::{
@@ -14,11 +20,16 @@ use tokio::sync::broadcast;
 use crate::{
     error::AppError,
     serial::{port_connection::PortEvent, serial_manager::SerialManager},
-    ui::{PortListPopup, widgets::ConfigAction},
+    ui::{
+        PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
+        popup::Notification,
+        widgets::{ConfigAction, DisplayAction, InputBarAction},
+    },
 };
 
 use super::widgets::{ConfigBar, Display, InputBar};
 
+/// Which widget currently has keyboard focus.
 #[derive(PartialEq, Clone, Copy)]
 pub enum Focus {
     ConfigBar,
@@ -26,27 +37,43 @@ pub enum Focus {
     InputBar,
 }
 
+/// Main UI state container.
+///
+/// Holds references to the serial manager and all UI components.
+/// The render loop runs in `run()`, polling for keyboard events
+/// and redrawing the screen each frame.
 pub struct Ui {
-    /// Used to send/receive serial data
+    /// Reference to the serial manager for port operations
     serial_manager: Arc<SerialManager>,
+    /// Receiver for serial port events (data, errors, etc.)
     serial_rx: broadcast::Receiver<Arc<PortEvent>>,
 
-    /// Widgets
+    /// Top bar showing port controls
     config_bar: ConfigBar,
+    /// Main area for serial output display
     display: Display,
+    /// Bottom bar for text input
     input_bar: InputBar,
 
-    /// Popups
+    /// Modal popup for port list selection
     port_list_popup: PortListPopup,
+    /// Modal popup for selecting send targets
+    send_group_popup: SendGroupPopup,
+    /// Toast notification overlay
+    notification_popup: Notification,
 
-    /// Focus state
+    /// Currently focused widget
     focus: Focus,
 
-    /// Exit flag
+    /// Set to true to exit the application
     exit: bool,
 }
 
 impl Ui {
+    /// Creates a new UI with the given serial manager.
+    ///
+    /// Subscribes to the serial manager's broadcast channel and
+    /// initializes all widgets with default state.
     pub fn new(serial_manager: Arc<SerialManager>) -> Self {
         let serial_rx = serial_manager.subscribe();
         Self {
@@ -56,11 +83,18 @@ impl Ui {
             display: Display::new(),
             input_bar: InputBar::new(),
             port_list_popup: PortListPopup::new(),
+            send_group_popup: SendGroupPopup::new(),
+            notification_popup: Notification::new(),
             focus: Focus::InputBar,
             exit: false,
         }
     }
 
+    /// Starts the main render loop.
+    ///
+    /// Enters raw mode, switches to alternate screen, and runs the
+    /// draw/event loop until `exit` is set to true. Restores terminal
+    /// state on exit.
     pub fn run(&mut self) -> Result<(), AppError> {
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
@@ -76,6 +110,10 @@ impl Ui {
         Ok(())
     }
 
+    /// Renders all UI components to the frame.
+    ///
+    /// Layout: ConfigBar (top, 3 lines) | Display (middle, flex) | InputBar (bottom, 3 lines)
+    /// Popups are rendered on top if visible.
     pub fn draw(&mut self, frame: &mut Frame) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -86,7 +124,7 @@ impl Ui {
             ])
             .split(frame.area());
 
-        // Render all the widgets
+        // Render main widgets with focus indication
         self.config_bar
             .render(frame, chunks[0], self.focus == Focus::ConfigBar);
         self.display
@@ -94,10 +132,27 @@ impl Ui {
         self.input_bar
             .render(frame, chunks[2], self.focus == Focus::InputBar);
 
-        // Render popups
-        self.port_list_popup.render(frame);
+        // Render popups on top (pass current port list)
+        let ports = self.serial_manager.get_port_list();
+
+        if self.port_list_popup.visible {
+            self.port_list_popup.render(frame, &ports);
+        }
+
+        if self.send_group_popup.visible {
+            self.send_group_popup.render(frame, &ports);
+        }
+
+        if self.notification_popup.is_visible() {
+            self.notification_popup.render(frame);
+            self.notification_popup.tick();
+        }
     }
 
+    /// Polls for and handles input events.
+    ///
+    /// Uses 16ms timeout (~60fps) for responsive UI updates.
+    /// Only processes key press events (ignores key release).
     pub fn handle_events(&mut self) -> Result<(), AppError> {
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
@@ -109,24 +164,101 @@ impl Ui {
         Ok(())
     }
 
+    /// Routes keyboard input to the appropriate handler.
+    ///
+    /// Priority: Visible popups > Global keys (Esc, Tab) > Focused widget.
+    /// Widgets return actions that are processed here.
     fn handle_key(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Esc => self.exit = true,
-            KeyCode::Tab => self.cycle_focus(),
-            _ => match self.focus {
-                Focus::ConfigBar => match self.config_bar.handle_key(key) {
-                    Some(ConfigAction::OpenPorts) => {
-                        self.port_list_popup.toggle();
+        let ports = self.serial_manager.get_port_list();
+
+        // Popups capture all input when visible
+        if self.port_list_popup.visible {
+            if let Some(action) = self.port_list_popup.handle_key(key, &ports) {
+                match action {
+                    PortListAction::Select(name) => {
+                        // TODO: handle port selection
                     }
-                    Some(ConfigAction::AddPort) => todo!(),
-                    None => (),
-                },
-                Focus::Display => self.display.handle_key(key),
-                Focus::InputBar => self.input_bar.handle_key(key),
-            },
+                    PortListAction::Close => {}
+                }
+            }
+            return;
+        }
+
+        if self.send_group_popup.visible {
+            if let Some(action) = self.send_group_popup.handle_key(key, &ports) {
+                match action {
+                    SendGroupAction::Close => {}
+                }
+            }
+            return;
+        }
+
+        // Global keys (always available when no popup)
+        match key.code {
+            KeyCode::Esc => {
+                self.exit = true;
+                return;
+            }
+            KeyCode::Tab => {
+                self.cycle_focus();
+                return;
+            }
+            _ => {}
+        }
+
+        // Route to focused widget, handle returned actions
+        match self.focus {
+            Focus::ConfigBar => {
+                if let Some(action) = self.config_bar.handle_key(key) {
+                    match action {
+                        ConfigAction::OpenPorts => self.port_list_popup.toggle(),
+                        ConfigAction::AddPort => { /* TODO */ }
+                        ConfigAction::Notify(msg) => self.notification_popup.show(msg),
+                    }
+                }
+            }
+            Focus::Display => {
+                if let Some(action) = self.display.handle_key(key) {
+                    match action {
+                        DisplayAction::FocusInput => {
+                            self.set_focus(Focus::InputBar);
+                        }
+                        DisplayAction::Notify(msg) => {
+                            self.notification_popup.show(msg);
+                        }
+                    }
+                }
+            }
+            Focus::InputBar => {
+                if let Some(action) = self.input_bar.handle_key(key) {
+                    match action {
+                        InputBarAction::OpenSendGroup => {
+                            self.send_group_popup.toggle();
+                        }
+                        InputBarAction::Send(text) => {
+                            let selected = self.send_group_popup.get_selected();
+                            if selected.is_empty() {
+                                self.notification_popup.show("No ports selected");
+                            } else {
+                                let _ = self.serial_manager.send(&selected, text.into_bytes());
+                                self.notification_popup
+                                    .show(format!("Sent to {} port(s)", selected.len()));
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
+    /// Sets focus to the specified widget.
+    fn set_focus(&mut self, focus: Focus) {
+        self.focus = focus;
+    }
+
+    /// Cycles focus to the next widget in order.
+    ///
+    /// Order: ConfigBar -> Display -> InputBar -> ConfigBar
     fn cycle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::ConfigBar => Focus::Display,

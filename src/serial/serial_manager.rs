@@ -1,3 +1,12 @@
+//! Central manager for multiple serial port connections.
+//!
+//! The `SerialManager` is the main interface between the UI and serial ports.
+//! It handles:
+//! - Loading port configurations from TOML files
+//! - Opening/closing port connections
+//! - Broadcasting received data to subscribers
+//! - Sending data to one or more ports
+
 use std::{
     collections::HashMap,
     fs::read_to_string,
@@ -15,25 +24,32 @@ use crate::{
     },
 };
 
-/// Holds connection and writer for a single port
+/// Internal struct holding all resources for a single managed port.
 struct ManagedPort {
+    /// The underlying port connection with reader/writer threads
     connection: Arc<Mutex<PortConnection>>,
+    /// Channel sender for writing data to this port
     writer: mpsc::Sender<Arc<Vec<u8>>>,
-    info: PortInfo,
+    /// Shared port configuration
+    info: Arc<PortInfo>,
 }
 
-/// Clients can ask to subscribe to its broadcast
-/// Clients can ask to get a reader/writer to a handle
+/// Manages multiple serial port connections.
+///
+/// Provides a pub/sub interface for receiving data from all ports via
+/// a broadcast channel. Clients can subscribe with `subscribe()` and
+/// send data to specific ports with `send()`.
 pub struct SerialManager {
+    /// Map of port name -> managed port resources
     ports: HashMap<String, ManagedPort>,
+    /// Broadcast channel for all port events (shared sender)
     broadcast: broadcast::Sender<Arc<PortEvent>>,
 }
 
-// Serial Manager Responsibilities
-// 1. Open ports based on config
-// 2. Save port mapping back to config (in case editing, adding or deleting)
-// 3. Open all writers/readers for serial ports
 impl SerialManager {
+    /// Creates a new empty serial manager.
+    ///
+    /// Initializes the broadcast channel with capacity for 1024 events.
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel::<Arc<PortEvent>>(1024);
         Self {
@@ -42,10 +58,14 @@ impl SerialManager {
         }
     }
 
-    /// Load port configurations from a TOML file.
+    /// Loads and opens all ports from a TOML configuration file.
     ///
-    /// Appends all ports from the file to this map. The TOML file should have
-    /// one `[port_name]` section per port.
+    /// The TOML file should have one `[port_name]` section per port:
+    /// ```toml
+    /// [my_device]
+    /// path = "/dev/ttyUSB0"
+    /// baud_rate = 115200
+    /// ```
     pub fn from_file(&mut self, port_config_path: impl AsRef<Path>) -> Result<(), AppError> {
         for (name, port_info) in
             toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
@@ -55,7 +75,10 @@ impl SerialManager {
         Ok(())
     }
 
-    /// Open a port connection and store it
+    /// Opens a serial port and adds it to the manager.
+    ///
+    /// Spawns reader/writer threads for the port. The port will start
+    /// broadcasting received data immediately.
     pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
         let mut connection = PortConnection::new();
         let writer = connection.open(port_info.clone(), self.broadcast.clone())?;
@@ -65,33 +88,50 @@ impl SerialManager {
             ManagedPort {
                 connection: Arc::new(Mutex::new(connection)),
                 writer,
-                info: port_info,
+                info: Arc::new(port_info),
             },
         );
 
         Ok(())
     }
 
+    /// Creates a new subscriber to receive all port events.
+    ///
+    /// Returns a receiver that will get `PortEvent::Data`, `PortEvent::Error`, etc.
+    /// from all managed ports.
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<PortEvent>> {
         self.broadcast.subscribe()
     }
 
-    /// Get list of port names
+    /// Returns a list of all port names.
     pub fn get_port_names(&self) -> Vec<String> {
         self.ports.keys().cloned().collect()
     }
 
-    /// Get port info by name
-    pub fn get_port_info(&self, name: &str) -> Option<&PortInfo> {
+    /// Gets the configuration for a port by name.
+    pub fn get_port_info(&self, name: &str) -> Option<&Arc<PortInfo>> {
         self.ports.get(name).map(|p| &p.info)
     }
 
-    /// Check if port exists
+    /// Returns all ports as (name, info) pairs.
+    ///
+    /// Useful for UI display. The `Arc<PortInfo>` allows cheap cloning.
+    pub fn get_port_list(&self) -> Vec<(String, Arc<PortInfo>)> {
+        self.ports
+            .iter()
+            .map(|(name, mp)| (name.clone(), mp.info.clone()))
+            .collect()
+    }
+
+    /// Returns `true` if a port with the given name exists.
     pub fn has_port(&self, name: &str) -> bool {
         self.ports.contains_key(name)
     }
 
-    /// Send data to specified ports
+    /// Sends data to one or more ports.
+    ///
+    /// The data is wrapped in `Arc` for efficient sharing when sending
+    /// to multiple ports. Fails if any port name is not found.
     pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
         let data = Arc::new(data);
         for key in keys {
@@ -105,12 +145,16 @@ impl SerialManager {
         Ok(())
     }
 
-    /// Close a port by name
+    /// Closes and removes a port from the manager.
+    ///
+    /// The port's reader/writer threads will terminate.
     pub fn close(&mut self, name: &str) -> Result<(), AppError> {
         self.ports.remove(name);
         Ok(())
     }
 
+    /// Saves all port configurations to a TOML file.
+    ///
     /// Overwrites the file if it exists. Each port is saved as a separate
     /// `[port_name]` section.
     pub fn save(&mut self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {

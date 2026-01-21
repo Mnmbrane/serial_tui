@@ -1,8 +1,18 @@
+//! Application-wide error types.
+//!
+//! Uses `thiserror` for deriving `std::error::Error` implementations.
+//! All errors across the app are consolidated into `AppError` for
+//! unified error handling with the `?` operator.
+
 use core::error;
 use std::{io::Error, num::ParseIntError, sync::mpsc::SendError};
 
 use thiserror::Error;
 
+/// Central error type for the application.
+///
+/// Wraps errors from IO, serialization, serial ports, and internal logic.
+/// Implements `From` for common error types to enable `?` propagation.
 #[derive(Debug, Error)]
 pub enum AppError {
     #[error(transparent)]

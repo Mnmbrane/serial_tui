@@ -1,9 +1,9 @@
-//! Port list popup for viewing connected ports.
+//! Send group popup for selecting target ports.
 //!
-//! Shows all configured ports with their status (connected indicator)
-//! and baud rate. Arrow keys navigate, Enter selects.
+//! Allows the user to select which ports should receive typed input.
+//! Uses checkboxes to show selection state.
 
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -17,41 +17,41 @@ use crate::serial::port_info::PortInfo;
 
 use super::Popup;
 
-/// Actions returned by the port list popup.
-pub enum PortListAction {
-    /// User selected a port by name
-    Select(String),
+/// Actions returned by the send group popup.
+pub enum SendGroupAction {
     /// Popup was closed (Esc pressed)
     Close,
 }
 
-/// Popup showing list of available COM ports.
+/// Popup for selecting which ports to send data to.
 ///
-/// Stateless regarding port data - receives it during render/handle_key
-/// to stay synchronized with the serial manager. Maintains only UI state
-/// (selection index, visibility).
-pub struct PortListPopup {
+/// Maintains a persistent set of selected port names that survives
+/// popup close/reopen. Uses checkbox UI (`[x]` / `[ ]`).
+pub struct SendGroupPopup {
     /// Helper for centered positioning
     popup: Popup,
-    /// Current selection in the list
+    /// Current cursor position in the list
     list_state: ListState,
+    /// Set of port names that are selected for sending
+    selected: HashSet<String>,
     /// Whether the popup is currently shown
     pub visible: bool,
 }
 
-impl PortListPopup {
-    /// Creates a new hidden port list popup.
+impl SendGroupPopup {
+    /// Creates a new hidden send group popup.
     ///
-    /// Uses 40% width, 50% height of the screen.
+    /// Uses 35% width, 50% height of the screen.
     pub fn new() -> Self {
         Self {
-            popup: Popup::new(40, 50),
+            popup: Popup::new(35, 50),
             list_state: ListState::default().with_selected(Some(0)),
+            selected: HashSet::new(),
             visible: false,
         }
     }
 
-    /// Toggles visibility, resetting selection on open.
+    /// Toggles visibility, resetting cursor on open.
     pub fn toggle(&mut self) {
         self.visible = !self.visible;
         if self.visible {
@@ -59,21 +59,32 @@ impl PortListPopup {
         }
     }
 
-    /// Opens the popup and selects the first item.
+    /// Opens the popup and moves cursor to first item.
     pub fn open(&mut self) {
         self.visible = true;
         self.list_state.select(Some(0));
     }
 
-    /// Closes the popup.
+    /// Closes the popup (selection is preserved).
     pub fn close(&mut self) {
         self.visible = false;
     }
 
-    /// Renders the port list.
+    /// Returns the currently selected port names.
     ///
-    /// Shows each port with a connection indicator (●), name, and baud rate.
-    /// Current selection is highlighted with a dark background.
+    /// Used by the input bar to know where to send data.
+    pub fn get_selected(&self) -> Vec<String> {
+        self.selected.iter().cloned().collect()
+    }
+
+    /// Returns true if the port is in the selection set.
+    pub fn is_selected(&self, name: &str) -> bool {
+        self.selected.contains(name)
+    }
+
+    /// Renders the checkbox list of ports.
+    ///
+    /// Each item shows: `[x] port_name  baud_rate` or `[ ] port_name  baud_rate`
     pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortInfo>)]) {
         if !self.visible {
             return;
@@ -82,12 +93,18 @@ impl PortListPopup {
         let area = self.popup.area(frame.area());
         self.popup.clear(frame, area);
 
-        // Build list items: "● port_name  baud_rate"
+        // Build list items with checkbox state
         let items: Vec<ListItem> = ports
             .iter()
             .map(|(name, info)| {
+                let checkbox = if self.selected.contains(name) {
+                    "[x]"
+                } else {
+                    "[ ]"
+                };
+
                 let line = Line::from(vec![
-                    Span::styled("● ", Style::default().fg(Color::Green)),
+                    Span::styled(format!("{} ", checkbox), Style::default().fg(Color::Yellow)),
                     Span::raw(format!("{}  {}", name, info.baud_rate)),
                 ]);
                 ListItem::new(line)
@@ -97,7 +114,7 @@ impl PortListPopup {
         let list = List::new(items)
             .block(
                 Block::default()
-                    .title(" Ports ")
+                    .title(" Send To ")
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::White)),
             )
@@ -109,18 +126,18 @@ impl PortListPopup {
     /// Handles key input when this popup is visible.
     ///
     /// - `Esc` -> Close popup
-    /// - `Up/k` -> Select previous
-    /// - `Down/j` -> Select next
-    /// - `Enter` -> Select current port
+    /// - `Up/k` -> Move cursor up
+    /// - `Down/j` -> Move cursor down
+    /// - `Space/Enter` -> Toggle current port selection
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
         ports: &[(String, Arc<PortInfo>)],
-    ) -> Option<PortListAction> {
+    ) -> Option<SendGroupAction> {
         match key.code {
             KeyCode::Esc => {
                 self.visible = false;
-                Some(PortListAction::Close)
+                Some(SendGroupAction::Close)
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.select_prev(ports.len());
@@ -130,19 +147,28 @@ impl PortListPopup {
                 self.select_next(ports.len());
                 None
             }
-            KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected() {
-                    if let Some((name, _)) = ports.get(i) {
-                        return Some(PortListAction::Select(name.clone()));
-                    }
-                }
+            KeyCode::Char(' ') | KeyCode::Enter => {
+                self.toggle_selected(ports);
                 None
             }
             _ => None,
         }
     }
 
-    /// Moves selection to the next item (wraps around).
+    /// Toggles the selected state of the currently highlighted port.
+    fn toggle_selected(&mut self, ports: &[(String, Arc<PortInfo>)]) {
+        if let Some(i) = self.list_state.selected() {
+            if let Some((name, _)) = ports.get(i) {
+                if self.selected.contains(name) {
+                    self.selected.remove(name);
+                } else {
+                    self.selected.insert(name.clone());
+                }
+            }
+        }
+    }
+
+    /// Moves cursor to the next item (wraps around).
     fn select_next(&mut self, len: usize) {
         if len == 0 {
             return;
@@ -154,7 +180,7 @@ impl PortListPopup {
         self.list_state.select(Some(i));
     }
 
-    /// Moves selection to the previous item (wraps around).
+    /// Moves cursor to the previous item (wraps around).
     fn select_prev(&mut self, len: usize) {
         if len == 0 {
             return;
