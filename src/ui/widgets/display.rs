@@ -242,6 +242,7 @@ impl Display {
     }
 
     /// Returns the current search query.
+    #[allow(dead_code)]
     pub fn search_query(&self) -> &str {
         &self.search_query
     }
@@ -501,8 +502,8 @@ impl Display {
             }
             // Yank selected text to clipboard
             (_, KeyCode::Char('y')) => match self.yank() {
-                Ok(n) => Some(DisplayAction::Notify(format!("Yanked {} line(s)", n))),
-                Err(e) => Some(DisplayAction::Notify(format!("Yank failed: {}", e))),
+                Ok(n) => Some(DisplayAction::Notify(format!("Yanked {n} line(s)"))),
+                Err(e) => Some(DisplayAction::Notify(format!("Yank failed: {e}"))),
             },
             // Escape exits visual mode (doesn't exit app when in visual)
             (_, KeyCode::Esc) if self.in_visual_mode() => {

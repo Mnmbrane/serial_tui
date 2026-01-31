@@ -16,6 +16,7 @@ use super::focused_block;
 /// Actions the config bar can request.
 pub enum ConfigAction {
     /// Show a notification message
+    #[allow(dead_code)]
     Notify(String),
     /// Open the port list popup
     OpenPorts,

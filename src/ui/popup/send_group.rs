@@ -60,12 +60,14 @@ impl SendGroupPopup {
     }
 
     /// Opens the popup and moves cursor to first item.
+    #[allow(dead_code)]
     pub fn open(&mut self) {
         self.visible = true;
         self.list_state.select(Some(0));
     }
 
     /// Closes the popup (selection is preserved).
+    #[allow(dead_code)]
     pub fn close(&mut self) {
         self.visible = false;
     }
@@ -78,6 +80,7 @@ impl SendGroupPopup {
     }
 
     /// Returns true if the port is in the selection set.
+    #[allow(dead_code)]
     pub fn is_selected(&self, name: &str) -> bool {
         self.selected.contains(name)
     }
@@ -104,7 +107,7 @@ impl SendGroupPopup {
                 };
 
                 let line = Line::from(vec![
-                    Span::styled(format!("{} ", checkbox), Style::default().fg(Color::Yellow)),
+                    Span::styled(format!("{checkbox} "), Style::default().fg(Color::Yellow)),
                     Span::raw(format!("{}  {}", name, info.baud_rate)),
                 ]);
                 ListItem::new(line)

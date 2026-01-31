@@ -2,10 +2,7 @@
 
 use ratatui::style::Color as RatatuiColor;
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    sync::mpsc::{Receiver, Sender},
-};
+use std::path::PathBuf;
 
 use crate::{error::AppError, types::color::Color};
 
@@ -83,7 +80,7 @@ impl Default for PortInfo {
 }
 
 // Unit tests
-#[cfg(test)] // Only compiels the module during testing
+#[cfg(test)]
 mod tests {
     use crate::types::color::Color;
 

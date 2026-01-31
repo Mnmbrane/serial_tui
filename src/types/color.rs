@@ -26,9 +26,9 @@ impl std::str::FromStr for Color {
             if s.len() != 7 {
                 return Err(AppError::InvalidColor("hex color must be #RRGGBB".into()));
             }
-            let r = u8::from_str_radix(&s[1..3], 16).map_err(|e| AppError::ParseIntError(e))?;
-            let g = u8::from_str_radix(&s[3..5], 16).map_err(|e| AppError::ParseIntError(e))?;
-            let b = u8::from_str_radix(&s[5..7], 16).map_err(|e| AppError::ParseIntError(e))?;
+            let r = u8::from_str_radix(&s[1..3], 16).map_err(AppError::ParseIntError)?;
+            let g = u8::from_str_radix(&s[3..5], 16).map_err(AppError::ParseIntError)?;
+            let b = u8::from_str_radix(&s[5..7], 16).map_err(AppError::ParseIntError)?;
             return Ok(Color(RatatuiColor::Rgb(r, g, b)));
         }
 
@@ -53,7 +53,7 @@ impl std::str::FromStr for Color {
 impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self.0 {
-            RatatuiColor::Rgb(r, g, b) => &format!("#{:02X}{:02X}{:02X}", r, g, b),
+            RatatuiColor::Rgb(r, g, b) => &format!("#{r:02X}{g:02X}{b:02X}"),
             RatatuiColor::Reset => "reset",
             RatatuiColor::Black => "black",
             RatatuiColor::Red => "red",
@@ -67,7 +67,7 @@ impl Display for Color {
             _ => "reset", // fallback
         };
 
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -79,7 +79,7 @@ impl<'de> Deserialize<'de> for Color {
         let color = String::deserialize(deserializer)?;
         let color = color.as_str();
 
-        Color::from_str(color).map_err(|e| serde::de::Error::custom(e))
+        Color::from_str(color).map_err(serde::de::Error::custom)
     }
 }
 

@@ -60,12 +60,14 @@ impl PortListPopup {
     }
 
     /// Opens the popup and selects the first item.
+    #[allow(dead_code)]
     pub fn open(&mut self) {
         self.visible = true;
         self.list_state.select(Some(0));
     }
 
     /// Closes the popup.
+    #[allow(dead_code)]
     pub fn close(&mut self) {
         self.visible = false;
     }

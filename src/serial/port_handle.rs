@@ -3,7 +3,7 @@
 //! Wraps the `serialport` crate's `SerialPort` trait object,
 //! providing a simpler interface for open/close/read/write operations.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::Path, time::Duration};
 
 use serialport::SerialPort;
 
@@ -28,7 +28,7 @@ impl PortHandle {
     /// Opens a serial port at the given path with specified baud rate.
     ///
     /// Uses 10ms read timeout for responsive behavior without CPU spinning.
-    pub fn open(mut self, path: &PathBuf, baud_rate: u32) -> Result<Self, AppError> {
+    pub fn open(mut self, path: &Path, baud_rate: u32) -> Result<Self, AppError> {
         self.handle = Some(
             serialport::new(path.to_string_lossy(), baud_rate)
                 .timeout(Duration::from_millis(10))
@@ -38,11 +38,13 @@ impl PortHandle {
     }
 
     /// Closes the serial port by dropping the handle.
+    #[allow(dead_code)]
     pub fn close(&mut self) {
         self.handle = None;
     }
 
     /// Returns `true` if the port is currently open.
+    #[allow(dead_code)]
     pub fn is_open(&self) -> bool {
         self.handle.is_some()
     }
@@ -61,11 +63,9 @@ impl PortHandle {
         }
     }
 
+    #[allow(dead_code)]
     pub fn device_name(&self) -> Option<String> {
-        match &self.handle {
-            Some(ser) => ser.name(),
-            None => None,
-        }
+        self.handle.as_ref().and_then(|ser| ser.name())
     }
 
     /// Reads bytes from the serial port into the buffer.
@@ -88,15 +88,11 @@ impl PortHandle {
     /// Both handles share the same underlying port. Useful for having
     /// separate reader and writer threads.
     pub fn try_clone(&self) -> Result<Self, AppError> {
-        if self.handle.is_none() {
-            return Err(AppError::NoPortHandleError);
-        }
-
         match &self.handle {
-            Some(clone) => Ok(PortHandle {
-                handle: Some(clone.try_clone()?),
+            Some(port) => Ok(PortHandle {
+                handle: Some(port.try_clone()?),
             }),
-            None => Ok(PortHandle { handle: None }),
+            None => Err(AppError::NoPortHandleError),
         }
     }
 }

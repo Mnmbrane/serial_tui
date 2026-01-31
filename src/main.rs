@@ -63,7 +63,7 @@ fn ensure_config() -> &'static str {
         }
         // Write default config
         fs::write(config_path, DEFAULT_CONFIG).ok();
-        eprintln!("Created default config at {}", CONFIG_PATH);
+        eprintln!("Created default config at {CONFIG_PATH}");
     }
 
     CONFIG_PATH
@@ -76,7 +76,7 @@ fn main() -> Result<(), AppError> {
     // Create serial handler and give port mapping to it
     let mut serial_manager = SerialManager::new();
     serial_manager
-        .from_file(config_path)
+        .load_config(config_path)
         .unwrap_or_else(|e| eprintln!("{e}"));
 
     // Start UI(ratatui)

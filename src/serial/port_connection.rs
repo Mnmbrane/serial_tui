@@ -1,8 +1,5 @@
 use std::{
-    sync::{
-        Arc,
-        mpsc::{self, Receiver},
-    },
+    sync::{Arc, mpsc},
     thread::{self, JoinHandle},
 };
 
@@ -11,10 +8,7 @@ use tokio::sync::broadcast::{self};
 
 use crate::{
     error::AppError,
-    serial::{
-        port_handle::{self, PortHandle},
-        port_info::PortInfo,
-    },
+    serial::{port_handle::PortHandle, port_info::PortInfo},
 };
 
 pub enum PortEvent {
@@ -24,39 +18,26 @@ pub enum PortEvent {
         data: Bytes,
     },
     Error(AppError),
+    #[allow(dead_code)] // Will be used when implementing port hot-plug
     Disconnected(String),
+    #[allow(dead_code)]
     PortAdded(String),
+    #[allow(dead_code)]
     PortRemoved(String),
 }
 
 pub struct PortConnection {
-    pub info: Option<PortInfo>,
-
-    /// Handle to write to port
-    writer_handle: Option<PortHandle>,
-    /// Handle to read from port
-    reader_handle: Option<PortHandle>,
-
-    /// Channel for other components to write to port
-    writer_channel: Option<Receiver<PortEvent>>,
-
-    /// Thread to write to port
+    /// Thread handle for the writer (kept for potential graceful shutdown)
+    #[allow(dead_code)]
     writer_thread: Option<JoinHandle<()>>,
-    /// Thread to read from port
+    /// Thread handle for the reader (kept for potential graceful shutdown)
+    #[allow(dead_code)]
     reader_thread: Option<JoinHandle<()>>,
 }
 
 impl PortConnection {
-    // Spawns the reader and writer
     pub fn new() -> Self {
         Self {
-            info: None,
-
-            writer_handle: None,
-            reader_handle: None,
-
-            writer_channel: None,
-
             writer_thread: None,
             reader_thread: None,
         }
@@ -88,17 +69,6 @@ impl PortConnection {
             broadcast_channel,
         ));
         Ok(writer_tx)
-    }
-
-    pub fn close(self) -> Result<(), AppError> {
-        if let Some(mut handle) = self.writer_handle {
-            handle.close();
-        }
-
-        if let Some(mut handle) = self.reader_handle {
-            handle.close();
-        }
-        Ok(())
     }
 
     /// Helper function to spawn and handle port reading.
@@ -154,7 +124,7 @@ impl PortConnection {
     /// Spawn writer thread for a particular port name
     fn spawn_writer(
         mut port_handle: PortHandle,
-        receiver: Receiver<Arc<Vec<u8>>>,
+        receiver: mpsc::Receiver<Arc<Vec<u8>>>,
     ) -> JoinHandle<()> {
         // Spawn a thread to read serial port
         // Move the port handle into here

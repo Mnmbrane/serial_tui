@@ -16,12 +16,11 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
-    DefaultTerminal, Frame,
+    Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Span},
 };
-use serde::de::Error;
 use tokio::sync::broadcast;
 
 use crate::{
@@ -184,25 +183,25 @@ impl Ui {
 
                     // Build styled line with colored port name
                     let line = Line::from(vec![
-                        Span::raw(format!("[{}] ", timestamp)),
-                        Span::styled(format!("[{}]", port), Style::default().fg(port_color)),
-                        Span::raw(format!(" {}", text)),
+                        Span::raw(format!("[{timestamp}] ")),
+                        Span::styled(format!("[{port}]"), Style::default().fg(port_color)),
+                        Span::raw(format!(" {text}")),
                     ]);
                     self.display.push_line(line);
                 }
                 PortEvent::Error(app_error) => {
                     self.notification_popup
-                        .show(format!("Error: {}", app_error));
+                        .show(format!("Error: {app_error}"));
                 }
                 PortEvent::Disconnected(port_name) => self
                     .notification_popup
-                    .show(format!("Disconnected {}", port_name)),
+                    .show(format!("Disconnected {port_name}")),
                 PortEvent::PortAdded(port_name) => self
                     .notification_popup
-                    .show(format!("Port Added {}", port_name)),
+                    .show(format!("Port Added {port_name}")),
                 PortEvent::PortRemoved(port_name) => self
                     .notification_popup
-                    .show(format!("Port Removed {}", port_name)),
+                    .show(format!("Port Removed {port_name}")),
             }
         }
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -226,7 +225,7 @@ impl Ui {
         if self.port_list_popup.visible {
             if let Some(action) = self.port_list_popup.handle_key(key, &ports) {
                 match action {
-                    PortListAction::Select(name) => {
+                    PortListAction::Select(_name) => {
                         // TODO: handle port selection
                     }
                     PortListAction::Close => {}
@@ -297,7 +296,7 @@ impl Ui {
                                         .show(format!("Sent to {} port(s)", selected.len())),
                                     Err(e) => self
                                         .notification_popup
-                                        .show(format!("Send failed: {}", e)),
+                                        .show(format!("Send failed: {e}")),
                                 }
                             }
                         }

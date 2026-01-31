@@ -27,6 +27,7 @@ use crate::{
 /// Internal struct holding all resources for a single managed port.
 struct ManagedPort {
     /// The underlying port connection with reader/writer threads
+    #[allow(dead_code)] // Kept for graceful shutdown implementation
     connection: Arc<Mutex<PortConnection>>,
     /// Channel sender for writing data to this port
     writer: mpsc::Sender<Arc<Vec<u8>>>,
@@ -66,7 +67,7 @@ impl SerialManager {
     /// path = "/dev/ttyUSB0"
     /// baud_rate = 115200
     /// ```
-    pub fn from_file(&mut self, port_config_path: impl AsRef<Path>) -> Result<(), AppError> {
+    pub fn load_config(&mut self, port_config_path: impl AsRef<Path>) -> Result<(), AppError> {
         for (name, port_info) in
             toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
         {
@@ -106,6 +107,7 @@ impl SerialManager {
     }
 
     /// Returns a list of all port names.
+    #[allow(dead_code)]
     pub fn get_port_names(&self) -> Vec<String> {
         self.ports.keys().cloned().collect()
     }
@@ -126,6 +128,7 @@ impl SerialManager {
     }
 
     /// Returns `true` if a port with the given name exists.
+    #[allow(dead_code)]
     pub fn has_port(&self, name: &str) -> bool {
         self.ports.contains_key(name)
     }
@@ -144,7 +147,7 @@ impl SerialManager {
 
             port.writer
                 .send(Arc::new(buf))
-                .map_err(|e| AppError::InvalidSend(e))?;
+                .map_err(AppError::InvalidSend)?;
         }
         Ok(())
     }
@@ -152,6 +155,7 @@ impl SerialManager {
     /// Closes and removes a port from the manager.
     ///
     /// The port's reader/writer threads will terminate.
+    #[allow(dead_code)]
     pub fn close(&mut self, name: &str) -> Result<(), AppError> {
         self.ports.remove(name);
         Ok(())
@@ -161,7 +165,8 @@ impl SerialManager {
     ///
     /// Overwrites the file if it exists. Each port is saved as a separate
     /// `[port_name]` section.
-    pub fn save(&mut self, port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
+    #[allow(dead_code)]
+    pub fn save(&mut self, _port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
         todo!()
     }
 }

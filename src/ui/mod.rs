@@ -8,5 +8,5 @@ mod popup;
 mod ui;
 mod widgets;
 
-pub use popup::{Notification, PortListAction, PortListPopup, SendGroupAction, SendGroupPopup};
+pub use popup::{PortListAction, PortListPopup, SendGroupAction, SendGroupPopup};
 pub use ui::Ui;

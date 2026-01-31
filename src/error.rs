@@ -4,8 +4,7 @@
 //! All errors across the app are consolidated into `AppError` for
 //! unified error handling with the `?` operator.
 
-use core::error;
-use std::{io::Error, num::ParseIntError, string::FromUtf8Error, sync::mpsc::SendError};
+use std::{io::Error, num::ParseIntError, sync::mpsc::SendError};
 
 use thiserror::Error;
 
@@ -33,16 +32,8 @@ pub enum AppError {
     SerialPortError(#[from] serialport::Error),
     #[error("Serial port read error: {0}")]
     SerialPortReadError(Error),
-    #[error("Toml file save error")]
-    PortConfigSaveError,
-    #[error("Cloning port failed")]
-    PortCloneFailed,
-    #[error("Lock Poisoned")]
-    LockPoisoned,
     #[error("Invalid Send: {0}")]
     InvalidSend(SendError<std::sync::Arc<Vec<u8>>>),
     #[error("Invalid Map Key")]
     InvalidMapKey,
-    #[error("Invalid Map Key: {0}")]
-    PushToDisplayError(FromUtf8Error),
 }
