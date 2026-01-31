@@ -7,7 +7,7 @@ use std::{path::Path, time::Duration};
 
 use serialport::SerialPort;
 
-use crate::error::AppError;
+use super::SerialError;
 
 /// Wrapper around a serial port connection.
 ///
@@ -28,7 +28,7 @@ impl PortHandle {
     /// Opens a serial port at the given path with specified baud rate.
     ///
     /// Uses 10ms read timeout for responsive behavior without CPU spinning.
-    pub fn open(mut self, path: &Path, baud_rate: u32) -> Result<Self, AppError> {
+    pub fn open(mut self, path: &Path, baud_rate: u32) -> Result<Self, SerialError> {
         self.handle = Some(
             serialport::new(path.to_string_lossy(), baud_rate)
                 .timeout(Duration::from_millis(10))
@@ -51,15 +51,15 @@ impl PortHandle {
 
     /// Writes all bytes to the serial port and flushes.
     ///
-    /// Returns `NoPortHandleError` if the port is closed.
-    pub fn write_all(&mut self, data: &[u8]) -> Result<(), AppError> {
+    /// Returns `NoHandle` error if the port is closed.
+    pub fn write_all(&mut self, data: &[u8]) -> Result<(), SerialError> {
         match &mut self.handle {
             Some(port) => {
-                port.write_all(data).map_err(AppError::InvalidIO)?;
-                port.flush().map_err(AppError::InvalidIO)?;
+                port.write_all(data).map_err(SerialError::Write)?;
+                port.flush().map_err(SerialError::Write)?;
                 Ok(())
             }
-            None => Err(AppError::NoPortHandleError),
+            None => Err(SerialError::NoHandle),
         }
     }
 
@@ -71,15 +71,15 @@ impl PortHandle {
     /// Reads bytes from the serial port into the buffer.
     ///
     /// Returns the number of bytes read. Returns `0` on timeout (not an error).
-    /// Returns `NoPortHandleError` if the port is closed.
-    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, AppError> {
+    /// Returns `NoHandle` error if the port is closed.
+    pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, SerialError> {
         match &mut self.handle {
             Some(port) => match port.read(buf) {
                 Ok(size) => Ok(size),
                 Err(e) if e.kind() == std::io::ErrorKind::TimedOut => Ok(0),
-                Err(e) => Err(AppError::SerialPortReadError(e)),
+                Err(e) => Err(SerialError::Read(e)),
             },
-            None => Err(AppError::NoPortHandleError),
+            None => Err(SerialError::NoHandle),
         }
     }
 
@@ -87,12 +87,12 @@ impl PortHandle {
     ///
     /// Both handles share the same underlying port. Useful for having
     /// separate reader and writer threads.
-    pub fn try_clone(&self) -> Result<Self, AppError> {
+    pub fn try_clone(&self) -> Result<Self, SerialError> {
         match &self.handle {
             Some(port) => Ok(PortHandle {
                 handle: Some(port.try_clone()?),
             }),
-            None => Err(AppError::NoPortHandleError),
+            None => Err(SerialError::NoHandle),
         }
     }
 }

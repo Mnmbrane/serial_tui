@@ -4,10 +4,11 @@ use ratatui::style::Color as RatatuiColor;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::{error::AppError, types::color::Color};
+use crate::{error::ConfigError, types::color::Color};
 
 /// Line ending style for serial communication.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum LineEnding {
     /// Line Feed (`\n`)
     #[default]
@@ -30,22 +31,19 @@ impl LineEnding {
 }
 
 impl TryFrom<String> for LineEnding {
-    type Error = AppError;
+    type Error = ConfigError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         match value.to_lowercase().as_str() {
             "lf" | "\n" => Ok(LineEnding::LF),
             "cr" | "\r" => Ok(LineEnding::CR),
             "crlf" | "\r\n" => Ok(LineEnding::CRLF),
-            e => Err(AppError::InvalidLineEnding(e.into())),
+            other => Err(ConfigError::InvalidLineEnding(other.into())),
         }
     }
 }
 
 /// Configuration for a single serial port connection.
-///
-/// Contains all parameters needed to open and communicate with a serial device,
-/// plus display settings like color for the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct PortInfo {
@@ -79,16 +77,13 @@ impl Default for PortInfo {
     }
 }
 
-// Unit tests
 #[cfg(test)]
 mod tests {
-    use crate::types::color::Color;
-
     use super::*;
 
     #[test]
-    fn test_new() {
-        let port_config: PortInfo = PortInfo::default();
+    fn test_default() {
+        let port_config = PortInfo::default();
         assert_eq!(
             port_config,
             PortInfo {
@@ -101,8 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn test_example() {
-        let mut port_config: PortInfo = PortInfo::default();
+    fn test_modify() {
+        let mut port_config = PortInfo::default();
         port_config.baud_rate = 9600;
         port_config.line_ending = LineEnding::CRLF;
         assert_eq!(port_config.baud_rate, 9600);

@@ -15,6 +15,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
@@ -24,7 +25,6 @@ use ratatui::{
 use tokio::sync::broadcast;
 
 use crate::{
-    error::AppError,
     serial::{port_connection::PortEvent, serial_manager::SerialManager},
     ui::{
         PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
@@ -105,7 +105,7 @@ impl Ui {
     /// Enters raw mode, switches to alternate screen, and runs the
     /// draw/event loop until `exit` is set to true. Restores terminal
     /// state on exit.
-    pub fn run(&mut self) -> Result<(), AppError> {
+    pub fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
@@ -167,7 +167,7 @@ impl Ui {
     ///
     /// Uses 16ms timeout (~60fps) for responsive UI updates.
     /// Only processes key press events (ignores key release).
-    pub fn handle_events(&mut self) -> Result<(), AppError> {
+    pub fn handle_events(&mut self) -> Result<()> {
         while let Ok(event) = self.serial_rx.try_recv() {
             match event.as_ref() {
                 PortEvent::Data { port, data } => {

@@ -11,17 +11,16 @@ use std::{
     collections::HashMap,
     fs::read_to_string,
     path::Path,
-    sync::{Arc, Mutex, mpsc},
+    sync::{mpsc, Arc, Mutex},
 };
 
+use anyhow::{Context, Result};
 use tokio::sync::broadcast;
 
-use crate::{
-    error::AppError,
-    serial::{
-        port_connection::{PortConnection, PortEvent},
-        port_info::PortInfo,
-    },
+use super::{
+    port_connection::{PortConnection, PortEvent},
+    port_info::PortInfo,
+    SerialError,
 };
 
 /// Internal struct holding all resources for a single managed port.
@@ -67,11 +66,18 @@ impl SerialManager {
     /// path = "/dev/ttyUSB0"
     /// baud_rate = 115200
     /// ```
-    pub fn load_config(&mut self, port_config_path: impl AsRef<Path>) -> Result<(), AppError> {
-        for (name, port_info) in
-            toml::from_str::<HashMap<String, PortInfo>>(read_to_string(port_config_path)?.as_str())?
-        {
-            self.open(name, port_info)?;
+    pub fn load_config(&mut self, port_config_path: impl AsRef<Path>) -> Result<()> {
+        let path = port_config_path.as_ref();
+        let content = read_to_string(path)
+            .with_context(|| format!("failed to read config file: {}", path.display()))?;
+
+        let ports: HashMap<String, PortInfo> =
+            toml::from_str(&content).context("failed to parse config file")?;
+
+        for (name, port_info) in ports {
+            if let Err(e) = self.open(name.clone(), port_info) {
+                eprintln!("failed to open port {name}: {e}");
+            }
         }
         Ok(())
     }
@@ -80,9 +86,8 @@ impl SerialManager {
     ///
     /// Spawns reader/writer threads for the port. The port will start
     /// broadcasting received data immediately.
-    pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), AppError> {
+    pub fn open(&mut self, name: String, port_info: PortInfo) -> Result<(), SerialError> {
         let mut connection = PortConnection::new();
-        // Convert to Arc<str> for cheap cloning in the reader thread
         let name_arc: Arc<str> = name.clone().into();
         let writer = connection.open(name_arc, port_info.clone(), self.broadcast.clone())?;
 
@@ -99,9 +104,6 @@ impl SerialManager {
     }
 
     /// Creates a new subscriber to receive all port events.
-    ///
-    /// Returns a receiver that will get `PortEvent::Data`, `PortEvent::Error`, etc.
-    /// from all managed ports.
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<PortEvent>> {
         self.broadcast.subscribe()
     }
@@ -118,8 +120,6 @@ impl SerialManager {
     }
 
     /// Returns all ports as (name, info) pairs.
-    ///
-    /// Useful for UI display. The `Arc<PortInfo>` allows cheap cloning.
     pub fn get_port_list(&self) -> Vec<(String, Arc<PortInfo>)> {
         self.ports
             .iter()
@@ -135,38 +135,25 @@ impl SerialManager {
 
     /// Sends data to one or more ports.
     ///
-    /// Appends the configured line ending for each port. Since ports may have
-    /// different line endings, data is built per-port.
-    pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), AppError> {
+    /// Appends the configured line ending for each port.
+    pub fn send(&self, keys: &[String], data: Vec<u8>) -> Result<(), SerialError> {
         for key in keys {
-            let port = self.ports.get(key).ok_or(AppError::InvalidMapKey)?;
+            let port = self
+                .ports
+                .get(key)
+                .ok_or_else(|| SerialError::PortNotFound(key.clone()))?;
 
-            // Build data with this port's line ending
             let mut buf = data.clone();
             buf.extend_from_slice(port.info.line_ending.as_bytes());
 
-            port.writer
-                .send(Arc::new(buf))
-                .map_err(AppError::InvalidSend)?;
+            port.writer.send(Arc::new(buf))?;
         }
         Ok(())
     }
 
     /// Closes and removes a port from the manager.
-    ///
-    /// The port's reader/writer threads will terminate.
     #[allow(dead_code)]
-    pub fn close(&mut self, name: &str) -> Result<(), AppError> {
+    pub fn close(&mut self, name: &str) {
         self.ports.remove(name);
-        Ok(())
-    }
-
-    /// Saves all port configurations to a TOML file.
-    ///
-    /// Overwrites the file if it exists. Each port is saved as a separate
-    /// `[port_name]` section.
-    #[allow(dead_code)]
-    pub fn save(&mut self, _port_cfg_path: impl AsRef<Path>) -> Result<(), AppError> {
-        todo!()
     }
 }
