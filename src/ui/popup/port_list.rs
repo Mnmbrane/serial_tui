@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use crate::serial::port_info::PortInfo;
+use crate::serial::config::PortConfig;
 
 use super::Popup;
 
@@ -76,7 +76,7 @@ impl PortListPopup {
     ///
     /// Shows each port with a connection indicator (●), name, and baud rate.
     /// Current selection is highlighted with a dark background.
-    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortInfo>)]) {
+    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortConfig>)]) {
         if !self.visible {
             return;
         }
@@ -117,7 +117,7 @@ impl PortListPopup {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        ports: &[(String, Arc<PortInfo>)],
+        ports: &[(String, Arc<PortConfig>)],
     ) -> Option<PortListAction> {
         match key.code {
             KeyCode::Esc => {

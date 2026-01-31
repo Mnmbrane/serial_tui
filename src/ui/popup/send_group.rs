@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use crate::serial::port_info::PortInfo;
+use crate::serial::config::PortConfig;
 
 use super::Popup;
 
@@ -88,7 +88,7 @@ impl SendGroupPopup {
     /// Renders the checkbox list of ports.
     ///
     /// Each item shows: `[x] port_name  baud_rate` or `[ ] port_name  baud_rate`
-    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortInfo>)]) {
+    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortConfig>)]) {
         if !self.visible {
             return;
         }
@@ -135,7 +135,7 @@ impl SendGroupPopup {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        ports: &[(String, Arc<PortInfo>)],
+        ports: &[(String, Arc<PortConfig>)],
     ) -> Option<SendGroupAction> {
         match key.code {
             KeyCode::Esc => {
@@ -159,7 +159,7 @@ impl SendGroupPopup {
     }
 
     /// Toggles the selected state of the currently highlighted port.
-    fn toggle_selected(&mut self, ports: &[(String, Arc<PortInfo>)]) {
+    fn toggle_selected(&mut self, ports: &[(String, Arc<PortConfig>)]) {
         if let Some(i) = self.list_state.selected() {
             if let Some((name, _)) = ports.get(i) {
                 if self.selected.contains(name) {

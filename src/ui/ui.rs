@@ -25,7 +25,7 @@ use ratatui::{
 use tokio::sync::broadcast;
 
 use crate::{
-    serial::{port_connection::PortEvent, serial_manager::SerialManager},
+    serial::{connection::PortEvent, hub::SerialHub},
     ui::{
         PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
         popup::Notification,
@@ -50,7 +50,7 @@ pub enum Focus {
 /// and redrawing the screen each frame.
 pub struct Ui {
     /// Reference to the serial manager for port operations
-    serial_manager: Arc<SerialManager>,
+    hub: Arc<SerialHub>,
     /// Receiver for serial port events (data, errors, etc.)
     serial_rx: broadcast::Receiver<Arc<PortEvent>>,
 
@@ -83,10 +83,10 @@ impl Ui {
     ///
     /// Subscribes to the serial manager's broadcast channel and
     /// initializes all widgets with default state.
-    pub fn new(serial_manager: Arc<SerialManager>) -> Self {
-        let serial_rx = serial_manager.subscribe();
+    pub fn new(hub: Arc<SerialHub>) -> Self {
+        let serial_rx = hub.subscribe();
         Self {
-            serial_manager,
+            hub,
             serial_rx,
             config_bar: ConfigBar::new(),
             display: Display::new(),
@@ -148,7 +148,7 @@ impl Ui {
             .render(frame, chunks[2], self.focus == Focus::InputBar);
 
         // Render popups on top (pass current port list)
-        let ports = self.serial_manager.get_port_list();
+        let ports = self.hub.list_ports();
 
         if self.port_list_popup.visible {
             self.port_list_popup.render(frame, &ports);
@@ -176,8 +176,8 @@ impl Ui {
 
                     // Look up port color from config
                     let port_color = self
-                        .serial_manager
-                        .get_port_info(port)
+                        .hub
+                        .get_config(port)
                         .map(|info| info.color.0)
                         .unwrap_or(Color::Reset);
 
@@ -219,7 +219,7 @@ impl Ui {
     /// Priority: Visible popups > Global keys (Esc, Tab) > Focused widget.
     /// Widgets return actions that are processed here.
     fn handle_key(&mut self, key: KeyEvent) {
-        let ports = self.serial_manager.get_port_list();
+        let ports = self.hub.list_ports();
 
         // Popups capture all input when visible
         if self.port_list_popup.visible {
@@ -290,7 +290,7 @@ impl Ui {
                             if selected.is_empty() {
                                 self.notification_popup.show("No ports selected");
                             } else {
-                                match self.serial_manager.send(&selected, text.into_bytes()) {
+                                match self.hub.send(&selected, text.into_bytes()) {
                                     Ok(_) => self
                                         .notification_popup
                                         .show(format!("Sent to {} port(s)", selected.len())),

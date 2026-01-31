@@ -9,7 +9,7 @@ use std::{fs, path::Path, sync::Arc};
 
 use anyhow::Result;
 
-use crate::{serial::serial_manager::SerialManager, ui::Ui};
+use crate::{serial::hub::SerialHub, ui::Ui};
 
 /// Default configuration created at runtime if no config exists
 const DEFAULT_CONFIG: &str = r###"# SerialTUI Configuration
@@ -58,12 +58,11 @@ fn ensure_config() -> &'static str {
 fn main() -> Result<()> {
     let config_path = ensure_config();
 
-    let mut serial_manager = SerialManager::new();
-    serial_manager
-        .load_config(config_path)
+    let mut hub = SerialHub::new();
+    hub.load_config(config_path)
         .unwrap_or_else(|e| eprintln!("{e}"));
 
-    let mut ui = Ui::new(Arc::new(serial_manager));
+    let mut ui = Ui::new(Arc::new(hub));
     ui.run()?;
 
     Ok(())

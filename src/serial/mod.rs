@@ -1,13 +1,13 @@
 //! Serial port communication layer.
 //!
 //! Provides abstractions for opening, reading from, and writing to serial ports.
-//! The main entry point is [`SerialManager`](serial_manager::SerialManager) which
-//! manages multiple port connections and provides a pub/sub interface for data.
+//! The main entry point is [`SerialHub`](hub::SerialHub) which manages multiple
+//! port connections and provides a pub/sub interface for data.
 
+pub mod config;
+pub mod connection;
 mod error;
-pub mod port_connection;
-mod port_handle;
-pub mod port_info;
-pub mod serial_manager;
+mod handle;
+pub mod hub;
 
 pub use error::SerialError;

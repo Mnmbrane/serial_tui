@@ -46,7 +46,7 @@ impl TryFrom<String> for LineEnding {
 /// Configuration for a single serial port connection.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(default)]
-pub struct PortInfo {
+pub struct PortConfig {
     /// Device path (e.g., "/dev/ttyUSB0", "COM3")
     pub path: PathBuf,
     /// Baud rate in bits per second
@@ -57,7 +57,7 @@ pub struct PortInfo {
     pub color: Color,
 }
 
-impl PartialEq for PortInfo {
+impl PartialEq for PortConfig {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
             && self.baud_rate == other.baud_rate
@@ -66,7 +66,7 @@ impl PartialEq for PortInfo {
     }
 }
 
-impl Default for PortInfo {
+impl Default for PortConfig {
     fn default() -> Self {
         Self {
             path: PathBuf::new(),
@@ -83,10 +83,10 @@ mod tests {
 
     #[test]
     fn test_default() {
-        let port_config = PortInfo::default();
+        let port_config = PortConfig::default();
         assert_eq!(
             port_config,
-            PortInfo {
+            PortConfig {
                 path: PathBuf::new(),
                 baud_rate: 115_200,
                 line_ending: LineEnding::LF,
@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_modify() {
-        let mut port_config = PortInfo::default();
+        let mut port_config = PortConfig::default();
         port_config.baud_rate = 9600;
         port_config.line_ending = LineEnding::CRLF;
         assert_eq!(port_config.baud_rate, 9600);

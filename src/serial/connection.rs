@@ -1,22 +1,22 @@
 //! Port connection management with reader/writer threads.
 
 use std::{
-    sync::{Arc, mpsc},
+    sync::{mpsc, Arc},
     thread::{self, JoinHandle},
 };
 
 use bytes::Bytes;
 use tokio::sync::broadcast;
 
-use super::{SerialError, port_handle::PortHandle, port_info::PortInfo};
+use super::{config::PortConfig, handle::Handle, SerialError};
 
 /// Events emitted by serial ports.
 pub enum PortEvent {
-    /// Data received from a port. Uses Arc<str> and Bytes for cheap cloning.
+    /// Data received from a port.
     Data { port: Arc<str>, data: Bytes },
     /// Error occurred on a port.
     Error(SerialError),
-    #[allow(dead_code)] // Will be used when implementing port hot-plug
+    #[allow(dead_code)]
     Disconnected(String),
     #[allow(dead_code)]
     PortAdded(String),
@@ -25,14 +25,14 @@ pub enum PortEvent {
 }
 
 /// Manages a single serial port connection with reader/writer threads.
-pub struct PortConnection {
-    /// Thread handle for the writer (kept for potential graceful shutdown)
+pub struct Connection {
+    #[allow(dead_code)]
     writer_thread: Option<JoinHandle<()>>,
-    /// Thread handle for the reader (kept for potential graceful shutdown)
+    #[allow(dead_code)]
     reader_thread: Option<JoinHandle<()>>,
 }
 
-impl PortConnection {
+impl Connection {
     pub fn new() -> Self {
         Self {
             writer_thread: None,
@@ -41,33 +41,26 @@ impl PortConnection {
     }
 
     /// Opens a port and spawns reader/writer threads.
-    ///
-    /// Returns a sender for writing data to the port.
     pub fn open(
         &mut self,
         name: Arc<str>,
-        info: PortInfo,
-        broadcast_channel: broadcast::Sender<Arc<PortEvent>>,
+        config: PortConfig,
+        broadcast_tx: broadcast::Sender<Arc<PortEvent>>,
     ) -> Result<mpsc::Sender<Arc<Vec<u8>>>, SerialError> {
         let (writer_tx, writer_rx) = mpsc::channel();
 
-        // Open port and create only the handles we need
-        let handle = PortHandle::new().open(&info.path, info.baud_rate)?;
+        let handle = Handle::open(&config.path, config.baud_rate)?;
         let writer_handle = handle.try_clone()?;
 
-        // Spawn writer thread (gets cloned handle)
         self.writer_thread = Some(Self::spawn_writer(writer_handle, writer_rx));
-
-        // Spawn reader thread (gets original handle)
-        self.reader_thread = Some(Self::spawn_reader(name, handle, broadcast_channel));
+        self.reader_thread = Some(Self::spawn_reader(name, handle, broadcast_tx));
 
         Ok(writer_tx)
     }
 
-    /// Spawns the reader thread that buffers incoming data and emits complete lines.
     fn spawn_reader(
         port_name: Arc<str>,
-        mut reader_handle: PortHandle,
+        mut handle: Handle,
         broadcast: broadcast::Sender<Arc<PortEvent>>,
     ) -> JoinHandle<()> {
         thread::spawn(move || {
@@ -75,8 +68,8 @@ impl PortConnection {
             let mut line_buf = Vec::with_capacity(256);
 
             loop {
-                match reader_handle.read(&mut read_buf) {
-                    Ok(0) => continue, // Timeout, keep reading
+                match handle.read(&mut read_buf) {
+                    Ok(0) => continue,
                     Ok(n) => {
                         for &byte in &read_buf[..n] {
                             if byte == b'\n' || byte == b'\r' {
@@ -93,7 +86,6 @@ impl PortConnection {
                         }
                     }
                     Err(e) => {
-                        // Flush remaining data before error
                         if !line_buf.is_empty() {
                             let _ = broadcast.send(Arc::new(PortEvent::Data {
                                 port: Arc::clone(&port_name),
@@ -108,14 +100,10 @@ impl PortConnection {
         })
     }
 
-    /// Spawns the writer thread that sends data to the port.
-    fn spawn_writer(
-        mut port_handle: PortHandle,
-        receiver: mpsc::Receiver<Arc<Vec<u8>>>,
-    ) -> JoinHandle<()> {
+    fn spawn_writer(mut handle: Handle, rx: mpsc::Receiver<Arc<Vec<u8>>>) -> JoinHandle<()> {
         thread::spawn(move || {
-            while let Ok(buf) = receiver.recv() {
-                let _ = port_handle.write_all(buf.as_ref());
+            while let Ok(buf) = rx.recv() {
+                let _ = handle.write_all(buf.as_ref());
             }
         })
     }
