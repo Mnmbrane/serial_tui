@@ -8,7 +8,9 @@ use std::{
 use bytes::Bytes;
 use tokio::sync::broadcast;
 
-use super::{config::PortConfig, handle::Handle, SerialError};
+use crate::config::PortConfig;
+
+use super::{handle::Handle, SerialError};
 
 /// Events emitted by serial ports.
 pub enum PortEvent {

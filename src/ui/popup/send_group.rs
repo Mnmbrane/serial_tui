@@ -13,7 +13,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState},
 };
 
-use crate::serial::config::PortConfig;
+use crate::config::PortConfig;
 
 use super::Popup;
 

@@ -10,8 +10,9 @@ use std::{
 use anyhow::{Context, Result};
 use tokio::sync::broadcast;
 
+use crate::config::PortConfig;
+
 use super::{
-    config::PortConfig,
     connection::{Connection, PortEvent},
     SerialError,
 };
