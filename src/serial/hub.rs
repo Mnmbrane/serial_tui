@@ -1,11 +1,6 @@
 //! Central hub for multiple serial port connections.
 
-use std::{
-    collections::HashMap,
-    fs::read_to_string,
-    path::Path,
-    sync::{mpsc, Arc, Mutex},
-};
+use std::{collections::HashMap, fs::read_to_string, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
 use tokio::sync::broadcast;
@@ -13,21 +8,13 @@ use tokio::sync::broadcast;
 use crate::config::PortConfig;
 
 use super::{
-    connection::{Connection, PortEvent},
+    port::{Port, PortEvent},
     SerialError,
 };
 
-/// Resources for a single managed port.
-struct ManagedPort {
-    #[allow(dead_code)]
-    connection: Arc<Mutex<Connection>>,
-    writer: mpsc::Sender<Arc<Vec<u8>>>,
-    config: Arc<PortConfig>,
-}
-
 /// Manages multiple serial port connections.
 pub struct SerialHub {
-    ports: HashMap<String, ManagedPort>,
+    ports: HashMap<String, Port>,
     broadcast: broadcast::Sender<Arc<PortEvent>>,
 }
 
@@ -60,18 +47,10 @@ impl SerialHub {
 
     /// Opens a serial port and adds it to the hub.
     pub fn open(&mut self, name: String, config: PortConfig) -> Result<(), SerialError> {
-        let mut connection = Connection::new();
         let name_arc: Arc<str> = name.clone().into();
-        let writer = connection.open(name_arc, config.clone(), self.broadcast.clone())?;
+        let port = Port::open(name_arc, config, self.broadcast.clone())?;
 
-        self.ports.insert(
-            name,
-            ManagedPort {
-                connection: Arc::new(Mutex::new(connection)),
-                writer,
-                config: Arc::new(config),
-            },
-        );
+        self.ports.insert(name, port);
 
         Ok(())
     }
@@ -96,7 +75,7 @@ impl SerialHub {
     pub fn list_ports(&self) -> Vec<(String, Arc<PortConfig>)> {
         self.ports
             .iter()
-            .map(|(name, mp)| (name.clone(), mp.config.clone()))
+            .map(|(name, port)| (name.clone(), port.config.clone()))
             .collect()
     }
 
@@ -117,7 +96,7 @@ impl SerialHub {
             let mut buf = data.clone();
             buf.extend_from_slice(port.config.line_ending.as_bytes());
 
-            port.writer.send(Arc::new(buf))?;
+            port.writer_tx.send(Arc::new(buf))?;
         }
         Ok(())
     }

@@ -1,8 +1,8 @@
 //! Serial port communication layer.
 
-pub mod connection;
 mod error;
-mod handle;
 pub mod hub;
+pub mod port;
 
 pub use error::SerialError;
+pub use port::PortEvent;

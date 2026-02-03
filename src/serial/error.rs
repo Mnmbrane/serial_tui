@@ -6,9 +6,6 @@ use thiserror::Error;
 /// Errors that can occur during serial port operations.
 #[derive(Debug, Error)]
 pub enum SerialError {
-    #[error("no port handle available")]
-    NoHandle,
-
     #[error("port not found: {0}")]
     PortNotFound(String),
 

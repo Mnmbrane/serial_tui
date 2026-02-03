@@ -25,7 +25,7 @@ use ratatui::{
 use tokio::sync::broadcast;
 
 use crate::{
-    serial::{connection::PortEvent, hub::SerialHub},
+    serial::{PortEvent, hub::SerialHub},
     ui::{
         PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
         popup::Notification,
