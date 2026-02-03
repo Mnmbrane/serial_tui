@@ -79,6 +79,13 @@ impl SendGroupPopup {
         self.selected.iter().cloned().collect()
     }
 
+    /// Selects all ports in the given list.
+    pub fn select_all(&mut self, ports: &[(String, Arc<PortConfig>)]) {
+        for (name, _) in ports {
+            self.selected.insert(name.clone());
+        }
+    }
+
     /// Returns true if the port is in the selection set.
     #[allow(dead_code)]
     pub fn is_selected(&self, name: &str) -> bool {

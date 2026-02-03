@@ -82,9 +82,13 @@ impl Ui {
     /// Creates a new UI with the given serial manager.
     ///
     /// Subscribes to the serial manager's broadcast channel and
-    /// initializes all widgets with default state.
+    /// initializes all widgets with default state. All ports are
+    /// selected for sending by default.
     pub fn new(hub: Arc<SerialHub>) -> Self {
         let serial_rx = hub.subscribe();
+        let mut send_group_popup = SendGroupPopup::new();
+        send_group_popup.select_all(&hub.list_ports());
+
         Self {
             hub,
             serial_rx,
@@ -92,7 +96,7 @@ impl Ui {
             display: Display::new(),
             input_bar: InputBar::new(),
             port_list_popup: PortListPopup::new(),
-            send_group_popup: SendGroupPopup::new(),
+            send_group_popup,
             notification_popup: Notification::new(),
             focus: Focus::InputBar,
             display_height: 0,
@@ -189,19 +193,9 @@ impl Ui {
                     ]);
                     self.display.push_line(line);
                 }
-                PortEvent::Error(app_error) => {
-                    self.notification_popup
-                        .show(format!("Error: {app_error}"));
+                PortEvent::Error(err) => {
+                    self.notification_popup.show(format!("Error: {err}"));
                 }
-                PortEvent::Disconnected(port_name) => self
-                    .notification_popup
-                    .show(format!("Disconnected {port_name}")),
-                PortEvent::PortAdded(port_name) => self
-                    .notification_popup
-                    .show(format!("Port Added {port_name}")),
-                PortEvent::PortRemoved(port_name) => self
-                    .notification_popup
-                    .show(format!("Port Removed {port_name}")),
             }
         }
         if event::poll(std::time::Duration::from_millis(16))? {

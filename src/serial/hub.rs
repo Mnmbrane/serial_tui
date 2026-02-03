@@ -8,8 +8,8 @@ use tokio::sync::broadcast;
 use crate::config::PortConfig;
 
 use super::{
-    port::{Port, PortEvent},
     SerialError,
+    port::{Port, PortEvent},
 };
 
 /// Manages multiple serial port connections.
@@ -19,9 +19,8 @@ pub struct SerialHub {
 }
 
 impl SerialHub {
-    /// Creates a new empty hub.
     pub fn new() -> Self {
-        let (tx, _) = broadcast::channel::<Arc<PortEvent>>(1024);
+        let (tx, _) = broadcast::channel(1024);
         Self {
             ports: HashMap::new(),
             broadcast: tx,
@@ -49,40 +48,23 @@ impl SerialHub {
     pub fn open(&mut self, name: String, config: PortConfig) -> Result<(), SerialError> {
         let name_arc: Arc<str> = name.clone().into();
         let port = Port::open(name_arc, config, self.broadcast.clone())?;
-
         self.ports.insert(name, port);
-
         Ok(())
     }
 
-    /// Subscribe to all port events.
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<PortEvent>> {
         self.broadcast.subscribe()
     }
 
-    /// Returns all port names.
-    #[allow(dead_code)]
-    pub fn port_names(&self) -> Vec<String> {
-        self.ports.keys().cloned().collect()
-    }
-
-    /// Gets the config for a port by name.
     pub fn get_config(&self, name: &str) -> Option<&Arc<PortConfig>> {
         self.ports.get(name).map(|p| &p.config)
     }
 
-    /// Returns all ports as (name, config) pairs.
     pub fn list_ports(&self) -> Vec<(String, Arc<PortConfig>)> {
         self.ports
             .iter()
             .map(|(name, port)| (name.clone(), port.config.clone()))
             .collect()
-    }
-
-    /// Returns `true` if a port exists.
-    #[allow(dead_code)]
-    pub fn has_port(&self, name: &str) -> bool {
-        self.ports.contains_key(name)
     }
 
     /// Sends data to one or more ports.
@@ -95,15 +77,8 @@ impl SerialHub {
 
             let mut buf = data.clone();
             buf.extend_from_slice(port.config.line_ending.as_bytes());
-
-            port.writer_tx.send(Arc::new(buf))?;
+            port.writer_tx.send(buf)?;
         }
         Ok(())
-    }
-
-    /// Closes and removes a port.
-    #[allow(dead_code)]
-    pub fn close(&mut self, name: &str) {
-        self.ports.remove(name);
     }
 }
