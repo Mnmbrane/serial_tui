@@ -1,11 +1,13 @@
 //! Serial-specific error types.
 
+use std::sync::Arc;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SerialError {
     #[error("port not found: {0}")]
-    PortNotFound(String),
+    PortNotFound(Arc<str>),
 
     #[error("failed to open port: {0}")]
     Open(#[from] serialport::Error),

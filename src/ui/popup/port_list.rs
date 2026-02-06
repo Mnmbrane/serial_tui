@@ -20,7 +20,7 @@ use super::Popup;
 /// Actions returned by the port list popup.
 pub enum PortListAction {
     /// User selected a port by name
-    Select(String),
+    Select(Arc<str>),
     /// Popup was closed (Esc pressed)
     Close,
 }
@@ -76,7 +76,7 @@ impl PortListPopup {
     ///
     /// Shows each port with a connection indicator (●), name, and baud rate.
     /// Current selection is highlighted with a dark background.
-    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortConfig>)]) {
+    pub fn render(&mut self, frame: &mut Frame, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         if !self.visible {
             return;
         }
@@ -117,7 +117,7 @@ impl PortListPopup {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        ports: &[(String, Arc<PortConfig>)],
+        ports: &[(Arc<str>, Arc<PortConfig>)],
     ) -> Option<PortListAction> {
         match key.code {
             KeyCode::Esc => {

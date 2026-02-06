@@ -33,7 +33,7 @@ pub struct SendGroupPopup {
     /// Current cursor position in the list
     list_state: ListState,
     /// Set of port names that are selected for sending
-    selected: HashSet<String>,
+    selected: HashSet<Arc<str>>,
     /// Whether the popup is currently shown
     pub visible: bool,
 }
@@ -75,12 +75,12 @@ impl SendGroupPopup {
     /// Returns the currently selected port names.
     ///
     /// Used by the input bar to know where to send data.
-    pub fn get_selected(&self) -> Vec<String> {
+    pub fn get_selected(&self) -> Vec<Arc<str>> {
         self.selected.iter().cloned().collect()
     }
 
     /// Selects all ports in the given list.
-    pub fn select_all(&mut self, ports: &[(String, Arc<PortConfig>)]) {
+    pub fn select_all(&mut self, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         for (name, _) in ports {
             self.selected.insert(name.clone());
         }
@@ -95,7 +95,7 @@ impl SendGroupPopup {
     /// Renders the checkbox list of ports.
     ///
     /// Each item shows: `[x] port_name  baud_rate` or `[ ] port_name  baud_rate`
-    pub fn render(&mut self, frame: &mut Frame, ports: &[(String, Arc<PortConfig>)]) {
+    pub fn render(&mut self, frame: &mut Frame, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         if !self.visible {
             return;
         }
@@ -142,7 +142,7 @@ impl SendGroupPopup {
     pub fn handle_key(
         &mut self,
         key: KeyEvent,
-        ports: &[(String, Arc<PortConfig>)],
+        ports: &[(Arc<str>, Arc<PortConfig>)],
     ) -> Option<SendGroupAction> {
         match key.code {
             KeyCode::Esc => {
@@ -166,7 +166,7 @@ impl SendGroupPopup {
     }
 
     /// Toggles the selected state of the currently highlighted port.
-    fn toggle_selected(&mut self, ports: &[(String, Arc<PortConfig>)]) {
+    fn toggle_selected(&mut self, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         if let Some(i) = self.list_state.selected() {
             if let Some((name, _)) = ports.get(i) {
                 if self.selected.contains(name) {

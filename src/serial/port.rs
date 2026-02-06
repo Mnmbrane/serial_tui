@@ -1,15 +1,13 @@
-//! Single port connection with sync reader/writer threads.
+//! Single port connection with async reader/writer tasks.
 
-use std::{
-    io::Read,
-    sync::{mpsc, Arc},
-    thread::{self, JoinHandle},
-    time::Duration,
-};
+use std::sync::Arc;
 
 use bytes::Bytes;
-use serialport::SerialPort;
-use tokio::sync::broadcast;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::mpsc,
+};
+use tokio_serial::SerialPortBuilderExt;
 
 use crate::config::PortConfig;
 
@@ -21,89 +19,63 @@ pub enum PortEvent {
     Error(SerialError),
 }
 
-/// A connected serial port with running reader/writer threads.
+/// A connected serial port with running reader/writer tasks.
 pub struct Port {
-    pub writer_tx: mpsc::Sender<Vec<u8>>,
+    pub writer_tx: mpsc::Sender<Bytes>,
     pub config: Arc<PortConfig>,
-    #[allow(dead_code)]
-    writer_thread: JoinHandle<()>,
-    #[allow(dead_code)]
-    reader_thread: JoinHandle<()>,
 }
 
 impl Port {
-    /// Opens a port and spawns reader/writer threads.
+    /// Opens a port and spawns reader/writer tasks.
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
-        event_tx: broadcast::Sender<Arc<PortEvent>>,
+        event_tx: mpsc::Sender<Arc<PortEvent>>,
     ) -> Result<Self, SerialError> {
-        let (writer_tx, writer_rx) = mpsc::channel();
+        let port = tokio_serial::new(config.path.to_string_lossy(), config.baud_rate)
+            .open_native_async()?;
 
-        let port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
-            .timeout(Duration::from_millis(10))
-            .open()?;
-        let writer_port = port.try_clone()?;
+        let (mut reader, mut writer) = tokio::io::split(port);
 
-        Ok(Self {
-            writer_tx,
-            config: Arc::new(config),
-            writer_thread: spawn_writer(writer_port, writer_rx),
-            reader_thread: spawn_reader(name, port, event_tx),
-        })
-    }
-}
-
-fn spawn_reader(
-    name: Arc<str>,
-    mut port: Box<dyn SerialPort>,
-    tx: broadcast::Sender<Arc<PortEvent>>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        let mut buf = [0u8; 1024];
-        let mut line = Vec::with_capacity(256);
-
-        loop {
-            match port.read(&mut buf) {
-                Ok(0) => {}
-                Ok(n) => {
-                    for &byte in &buf[..n] {
-                        if byte == b'\n' || byte == b'\r' {
-                            if !line.is_empty() {
-                                let _ = tx.send(Arc::new(PortEvent::Data {
-                                    port: Arc::clone(&name),
-                                    data: Bytes::copy_from_slice(&line),
-                                }));
-                                line.clear();
-                            }
-                        } else {
-                            line.push(byte);
+        // Spawn reader task
+        let reader_name = name.clone();
+        let reader_tx = event_tx.clone();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            loop {
+                match reader.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let data = Bytes::copy_from_slice(&buf[..n]);
+                        let event = Arc::new(PortEvent::Data {
+                            port: reader_name.clone(),
+                            data,
+                        });
+                        if reader_tx.send(event).await.is_err() {
+                            break; // receiver dropped
                         }
                     }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-                Err(e) => {
-                    if !line.is_empty() {
-                        let _ = tx.send(Arc::new(PortEvent::Data {
-                            port: Arc::clone(&name),
-                            data: Bytes::copy_from_slice(&line),
-                        }));
+                    Err(e) => {
+                        let _ = reader_tx
+                            .send(Arc::new(PortEvent::Error(SerialError::Read(e))))
+                            .await;
+                        break;
                     }
-                    let _ = tx.send(Arc::new(PortEvent::Error(SerialError::Read(e))));
+                }
+            }
+        });
+
+        // Spawn writer task
+        let (writer_tx, mut writer_rx) = mpsc::channel::<Bytes>(32);
+        tokio::spawn(async move {
+            while let Some(data) = writer_rx.recv().await {
+                if writer.write_all(&data).await.is_err() {
                     break;
                 }
             }
-        }
-    })
-}
+        });
 
-fn spawn_writer(mut port: Box<dyn SerialPort>, rx: mpsc::Receiver<Vec<u8>>) -> JoinHandle<()> {
-    thread::spawn(move || {
-        use std::io::Write;
-        while let Ok(data) = rx.recv() {
-            if port.write_all(&data).is_err() || port.flush().is_err() {
-                break;
-            }
-        }
-    })
+        let config = Arc::new(config);
+        Ok(Port { writer_tx, config })
+    }
 }

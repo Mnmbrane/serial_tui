@@ -8,6 +8,7 @@ use std::{io, sync::Arc};
 
 use chrono::Local;
 
+use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -15,14 +16,13 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use anyhow::Result;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Span},
 };
-use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 
 use crate::{
     serial::{PortEvent, hub::SerialHub},
@@ -52,7 +52,7 @@ pub struct Ui {
     /// Reference to the serial manager for port operations
     hub: Arc<SerialHub>,
     /// Receiver for serial port events (data, errors, etc.)
-    serial_rx: broadcast::Receiver<Arc<PortEvent>>,
+    serial_rx: mpsc::Receiver<Arc<PortEvent>>,
 
     /// Top bar showing port controls
     config_bar: ConfigBar,
@@ -84,8 +84,7 @@ impl Ui {
     /// Subscribes to the serial manager's broadcast channel and
     /// initializes all widgets with default state. All ports are
     /// selected for sending by default.
-    pub fn new(hub: Arc<SerialHub>) -> Self {
-        let serial_rx = hub.subscribe();
+    pub fn new(hub: Arc<SerialHub>, serial_rx: mpsc::Receiver<Arc<PortEvent>>) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
         send_group_popup.select_all(&hub.list_ports());
 
@@ -288,9 +287,9 @@ impl Ui {
                                     Ok(_) => self
                                         .notification_popup
                                         .show(format!("Sent to {} port(s)", selected.len())),
-                                    Err(e) => self
-                                        .notification_popup
-                                        .show(format!("Send failed: {e}")),
+                                    Err(e) => {
+                                        self.notification_popup.show(format!("Send failed: {e}"))
+                                    }
                                 }
                             }
                         }

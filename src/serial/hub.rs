@@ -3,7 +3,7 @@
 use std::{collections::HashMap, fs::read_to_string, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
-use tokio::sync::broadcast;
+use tokio::sync::mpsc;
 
 use crate::config::PortConfig;
 
@@ -14,17 +14,20 @@ use super::{
 
 /// Manages multiple serial port connections.
 pub struct SerialHub {
-    ports: HashMap<String, Port>,
-    broadcast: broadcast::Sender<Arc<PortEvent>>,
+    ports: HashMap<Arc<str>, Port>,
+    event_tx: mpsc::Sender<Arc<PortEvent>>,
 }
 
 impl SerialHub {
-    pub fn new() -> Self {
-        let (tx, _) = broadcast::channel(1024);
-        Self {
-            ports: HashMap::new(),
-            broadcast: tx,
-        }
+    pub fn new() -> (Self, mpsc::Receiver<Arc<PortEvent>>) {
+        let (event_tx, event_rx) = mpsc::channel(1024);
+        (
+            Self {
+                ports: HashMap::new(),
+                event_tx,
+            },
+            event_rx,
+        )
     }
 
     /// Loads and opens all ports from a TOML config file.
@@ -46,21 +49,17 @@ impl SerialHub {
 
     /// Opens a serial port and adds it to the hub.
     pub fn open(&mut self, name: String, config: PortConfig) -> Result<(), SerialError> {
-        let name_arc: Arc<str> = name.clone().into();
-        let port = Port::open(name_arc, config, self.broadcast.clone())?;
+        let name: Arc<str> = name.into();
+        let port = Port::open(name.clone(), config, self.event_tx.clone())?;
         self.ports.insert(name, port);
         Ok(())
-    }
-
-    pub fn subscribe(&self) -> broadcast::Receiver<Arc<PortEvent>> {
-        self.broadcast.subscribe()
     }
 
     pub fn get_config(&self, name: &str) -> Option<&Arc<PortConfig>> {
         self.ports.get(name).map(|p| &p.config)
     }
 
-    pub fn list_ports(&self) -> Vec<(String, Arc<PortConfig>)> {
+    pub fn list_ports(&self) -> Vec<(Arc<str>, Arc<PortConfig>)> {
         self.ports
             .iter()
             .map(|(name, port)| (name.clone(), port.config.clone()))
@@ -68,7 +67,7 @@ impl SerialHub {
     }
 
     /// Sends data to one or more ports.
-    pub fn send(&self, ports: &[String], data: Vec<u8>) -> Result<(), SerialError> {
+    pub fn send(&self, ports: &[Arc<str>], data: Vec<u8>) -> Result<(), SerialError> {
         for name in ports {
             let port = self
                 .ports
@@ -77,7 +76,7 @@ impl SerialHub {
 
             let mut buf = data.clone();
             buf.extend_from_slice(port.config.line_ending.as_bytes());
-            port.writer_tx.send(buf)?;
+            //port.writer_tx.send(buf)?;
         }
         Ok(())
     }
