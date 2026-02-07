@@ -93,4 +93,18 @@ impl SerialHub {
         }
         Ok(())
     }
+
+    /// Sends each port's configured line ending.
+    pub fn send_line_ending(&self, ports: &[Arc<str>]) -> Result<(), SerialError> {
+        for name in ports {
+            let port = self
+                .ports
+                .get(name)
+                .ok_or_else(|| SerialError::PortNotFound(name.clone()))?;
+
+            let ending = port.config.line_ending.as_bytes();
+            port.writer_tx.try_send(Bytes::from_static(ending))?;
+        }
+        Ok(())
+    }
 }

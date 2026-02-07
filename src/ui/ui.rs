@@ -305,7 +305,12 @@ impl Ui {
                             if selected.is_empty() {
                                 self.notification_popup.show("No ports selected");
                             } else {
-                                match self.hub.send(&selected, Bytes::from(text)) {
+                                let result = if text.is_empty() {
+                                    self.hub.send_line_ending(&selected)
+                                } else {
+                                    self.hub.send(&selected, Bytes::from(text))
+                                };
+                                match result {
                                     Ok(_) => self
                                         .notification_popup
                                         .show(format!("Sent to {} port(s)", selected.len())),

@@ -1,6 +1,9 @@
 //! Serial data logger — writes per-port and combined super log files.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+};
 
 use tokio::{
     fs::{self, File, OpenOptions},
@@ -47,9 +50,9 @@ pub async fn run(mut log_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>) {
         let text = String::from_utf8_lossy(data);
 
         // Write to per-port file
-        if let std::collections::hash_map::Entry::Vacant(entry) = port_files.entry(port.clone()) {
+        if !port_files.contains_key(port) {
             if let Some(f) = open_log(&format!("logs/{port}.log")).await {
-                entry.insert(f);
+                port_files.insert(port.clone(), f);
             }
         }
 
