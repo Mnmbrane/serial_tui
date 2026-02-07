@@ -3,9 +3,10 @@
 use std::{collections::HashMap, fs::read_to_string, path::Path, sync::Arc};
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use tokio::sync::mpsc;
 
-use crate::config::PortConfig;
+use crate::{config::PortConfig, notify::Notify};
 
 use super::{
     SerialError,
@@ -15,18 +16,21 @@ use super::{
 /// Manages multiple serial port connections.
 pub struct SerialHub {
     ports: HashMap<Arc<str>, Port>,
-    event_tx: mpsc::Sender<Arc<PortEvent>>,
+    port_recv_chan_tx: mpsc::Sender<Arc<PortEvent>>,
+    notify_tx: mpsc::UnboundedSender<Notify>,
 }
 
 impl SerialHub {
-    pub fn new() -> (Self, mpsc::Receiver<Arc<PortEvent>>) {
-        let (event_tx, event_rx) = mpsc::channel(1024);
+    /// Creates a new hub and returns the event receiver for the port data
+    pub fn new(notify_tx: mpsc::UnboundedSender<Notify>) -> (Self, mpsc::Receiver<Arc<PortEvent>>) {
+        let (port_recv_chan_tx, port_recv_chan_rx) = mpsc::channel(1024);
         (
             Self {
                 ports: HashMap::new(),
-                event_tx,
+                port_recv_chan_tx,
+                notify_tx,
             },
-            event_rx,
+            port_recv_chan_rx,
         )
     }
 
@@ -50,7 +54,12 @@ impl SerialHub {
     /// Opens a serial port and adds it to the hub.
     pub fn open(&mut self, name: String, config: PortConfig) -> Result<(), SerialError> {
         let name: Arc<str> = name.into();
-        let port = Port::open(name.clone(), config, self.event_tx.clone())?;
+        let port = Port::open(
+            name.clone(),
+            config,
+            self.port_recv_chan_tx.clone(),
+            self.notify_tx.clone(),
+        )?;
         self.ports.insert(name, port);
         Ok(())
     }
@@ -67,16 +76,14 @@ impl SerialHub {
     }
 
     /// Sends data to one or more ports.
-    pub fn send(&self, ports: &[Arc<str>], data: Vec<u8>) -> Result<(), SerialError> {
+    pub fn send(&self, ports: &[Arc<str>], data: Bytes) -> Result<(), SerialError> {
         for name in ports {
             let port = self
                 .ports
                 .get(name)
                 .ok_or_else(|| SerialError::PortNotFound(name.clone()))?;
 
-            let mut buf = data.clone();
-            buf.extend_from_slice(port.config.line_ending.as_bytes());
-            //port.writer_tx.send(buf)?;
+            port.writer_tx.try_send(data.clone())?;
         }
         Ok(())
     }

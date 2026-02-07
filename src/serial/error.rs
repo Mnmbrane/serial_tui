@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
+use bytes::Bytes;
 use thiserror::Error;
+use tokio::sync::mpsc::error::TrySendError;
 
 #[derive(Debug, Error)]
 pub enum SerialError {
@@ -15,6 +17,6 @@ pub enum SerialError {
     #[error("read error: {0}")]
     Read(std::io::Error),
 
-    #[error("failed to send to port")]
-    Send(#[from] std::sync::mpsc::SendError<Vec<u8>>),
+    #[error("write channel full or closed")]
+    TrySend(#[from] TrySendError<Bytes>),
 }

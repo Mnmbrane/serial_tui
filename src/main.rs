@@ -3,27 +3,19 @@
 mod app;
 mod config;
 mod error;
+mod notify;
 mod serial;
 mod types;
 mod ui;
-use app::App;
-
-use std::sync::Arc;
 
 use anyhow::Result;
 
-use crate::{serial::hub::SerialHub, ui::Ui};
+use crate::app::App;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    let config_path = config::ensure_config();
-
-    let (mut hub, event_rx) = SerialHub::new();
-    hub.load_config(config_path)
-        .unwrap_or_else(|e| eprintln!("{e}"));
-
-    let mut ui = Ui::new(Arc::new(hub), event_rx);
-    ui.run()?;
-
+fn main() -> Result<()> {
+    let rt = tokio::runtime::Runtime::new()?;
+    let _guard = rt.enter();
+    let mut app = App::new();
+    app.run()?;
     Ok(())
 }

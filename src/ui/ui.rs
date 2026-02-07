@@ -6,6 +6,7 @@
 
 use std::{io, sync::Arc};
 
+use bytes::Bytes;
 use chrono::Local;
 
 use anyhow::Result;
@@ -25,6 +26,7 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::{
+    notify::Notify,
     serial::{PortEvent, hub::SerialHub},
     ui::{
         PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
@@ -53,6 +55,8 @@ pub struct Ui {
     hub: Arc<SerialHub>,
     /// Receiver for serial port events (data, errors, etc.)
     serial_rx: mpsc::Receiver<Arc<PortEvent>>,
+    /// Receiver for structured notifications from background components
+    notify_rx: mpsc::UnboundedReceiver<Notify>,
 
     /// Top bar showing port controls
     config_bar: ConfigBar,
@@ -84,13 +88,18 @@ impl Ui {
     /// Subscribes to the serial manager's broadcast channel and
     /// initializes all widgets with default state. All ports are
     /// selected for sending by default.
-    pub fn new(hub: Arc<SerialHub>, serial_rx: mpsc::Receiver<Arc<PortEvent>>) -> Self {
+    pub fn new(
+        hub: Arc<SerialHub>,
+        serial_rx: mpsc::Receiver<Arc<PortEvent>>,
+        notify_rx: mpsc::UnboundedReceiver<Notify>,
+    ) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
         send_group_popup.select_all(&hub.list_ports());
 
         Self {
             hub,
             serial_rx,
+            notify_rx,
             config_bar: ConfigBar::new(),
             display: Display::new(),
             input_bar: InputBar::new(),
@@ -197,6 +206,17 @@ impl Ui {
                 }
             }
         }
+
+        // Drain structured notifications from background components
+        while let Ok(notif) = self.notify_rx.try_recv() {
+            let prefix = match notif.level {
+                crate::notify::NotifyLevel::Info => "Info",
+                crate::notify::NotifyLevel::Warn => "Warn",
+                crate::notify::NotifyLevel::Error => "Error",
+            };
+            self.notification_popup
+                .show(format!("[{prefix}] [{}] {}", notif.source, notif.message));
+        }
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -283,7 +303,7 @@ impl Ui {
                             if selected.is_empty() {
                                 self.notification_popup.show("No ports selected");
                             } else {
-                                match self.hub.send(&selected, text.into_bytes()) {
+                                match self.hub.send(&selected, Bytes::from(text)) {
                                     Ok(_) => self
                                         .notification_popup
                                         .show(format!("Sent to {} port(s)", selected.len())),

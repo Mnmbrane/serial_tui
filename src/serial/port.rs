@@ -9,7 +9,10 @@ use tokio::{
 };
 use tokio_serial::SerialPortBuilderExt;
 
-use crate::config::PortConfig;
+use crate::{
+    config::PortConfig,
+    notify::{Notify, NotifyLevel},
+};
 
 use super::SerialError;
 
@@ -31,6 +34,7 @@ impl Port {
         name: Arc<str>,
         config: PortConfig,
         event_tx: mpsc::Sender<Arc<PortEvent>>,
+        notify_tx: mpsc::UnboundedSender<Notify>,
     ) -> Result<Self, SerialError> {
         let port = tokio_serial::new(config.path.to_string_lossy(), config.baud_rate)
             .open_native_async()?;
@@ -40,6 +44,7 @@ impl Port {
         // Spawn reader task
         let reader_name = name.clone();
         let reader_tx = event_tx.clone();
+        let reader_notify_tx = notify_tx.clone();
         tokio::spawn(async move {
             let mut buf = [0u8; 1024];
             loop {
@@ -56,9 +61,11 @@ impl Port {
                         }
                     }
                     Err(e) => {
-                        let _ = reader_tx
-                            .send(Arc::new(PortEvent::Error(SerialError::Read(e))))
-                            .await;
+                        let _ = reader_notify_tx.send(Notify {
+                            level: NotifyLevel::Error,
+                            source: reader_name.clone(),
+                            message: format!("read error: {e}"),
+                        });
                         break;
                     }
                 }
@@ -67,9 +74,15 @@ impl Port {
 
         // Spawn writer task
         let (writer_tx, mut writer_rx) = mpsc::channel::<Bytes>(32);
+        let writer_name = name;
         tokio::spawn(async move {
             while let Some(data) = writer_rx.recv().await {
-                if writer.write_all(&data).await.is_err() {
+                if let Err(e) = writer.write_all(&data).await {
+                    let _ = notify_tx.send(Notify {
+                        level: NotifyLevel::Error,
+                        source: writer_name.clone(),
+                        message: format!("write error: {e}"),
+                    });
                     break;
                 }
             }
