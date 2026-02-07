@@ -7,7 +7,7 @@ Terminal UI for multi-port serial communication with vim-style navigation.
 - **Multi-Port Monitoring** - Monitor multiple serial ports with per-port colors
 - **Vim Navigation** - `j/k`, `gg/G`, `Ctrl+u/d`, `/search`, `n/N`
 - **Visual Selection** - `v` to select, `y` to yank to clipboard
-- **Line Buffering** - Complete lines only (splits on `\n` or `\r`)
+- **Data Logging** - Per-port log files and combined `super.log` in `logs/`
 - **Configurable** - TOML config with colors and line endings
 
 ## Quick Start
@@ -42,7 +42,7 @@ color = "green"          # Named or "#RRGGBB"
 | `v` | Visual select |
 | `y` | Yank to clipboard |
 | `Ctrl+Space` | Select send ports |
-| `Enter` | Send text |
+| `Enter` | Send text (empty = send line ending) |
 
 ## Layout
 

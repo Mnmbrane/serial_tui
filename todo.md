@@ -6,21 +6,28 @@
 - [x] Project setup (Cargo.toml, directory structure)
 - [x] Error handling with thiserror
 - [x] Color type with serde support
+- [x] App struct with channel wiring
 
 ### Config
-- [x] PortInfo struct (path, baud_rate, line_ending, color)
+- [x] PortConfig struct (path, baud_rate, line_ending, color)
 - [x] LineEnding enum (LF, CR, CRLF)
 - [x] TOML config loading
 - [x] Default config creation on first run
 
 ### Serial
-- [x] SerialManager (multi-port hub)
-- [x] PortConnection (reader/writer threads)
-- [x] PortHandle (serialport wrapper)
-- [x] Broadcast channel for received data
-- [x] Line buffering (emit on \n or \r)
-- [x] Send with line ending append
+- [x] SerialHub (multi-port manager)
+- [x] Port (async reader/writer tokio tasks)
+- [x] Unbounded mpsc channel for received data
+- [x] Send raw data to selected ports
+- [x] Send line ending on empty Enter (per-port config)
 - [x] Write flush for reliability
+- [x] Notify channel for background errors
+
+### Logging
+- [x] Logger tokio task (separate from notify channel)
+- [x] Per-port log files (`logs/<port>.log`)
+- [x] Combined super log (`logs/super.log`)
+- [x] Timestamp captured at read time (shared with UI)
 
 ### UI Core
 - [x] Ratatui render loop (~60fps)
@@ -72,10 +79,6 @@
 - [ ] Command mode (:q, :w, :clear)
 - [ ] Input history (up/down arrows)
 - [ ] Vim-style cursor movement in input
-
-### Logging
-- [ ] Combined log file (all.log)
-- [ ] Per-port log files
 
 ### Scripting (Future)
 - [ ] Lexer

@@ -26,8 +26,7 @@ Prerequisites for working on this project.
 - [ ] `select!` macro
 
 ### Channels (Critical)
-- [ ] `mpsc` - multi-producer, single-consumer
-- [ ] `broadcast` - multi-producer, multi-consumer
+- [ ] `mpsc` - multi-producer, single-consumer (bounded and unbounded)
 - [ ] `oneshot` - single-use
 
 ### Synchronization
