@@ -3,12 +3,22 @@
 use std::{collections::HashMap, sync::Arc};
 
 use tokio::{
-    fs::{self, OpenOptions},
-    io::{AsyncWriteExt, BufWriter},
+    fs::{self, File, OpenOptions},
+    io::AsyncWriteExt,
     sync::mpsc,
 };
 
 use crate::serial::PortEvent;
+
+async fn open_log(path: &str) -> Option<File> {
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await
+        .map_err(|e| eprintln!("logger: failed to open {path}: {e}"))
+        .ok()
+}
 
 /// Runs the logger task, writing incoming serial data to per-port log files
 /// and a combined `super.log`.
@@ -18,20 +28,10 @@ pub async fn run(mut log_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>) {
         return;
     }
 
-    let super_file = match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("logs/super.log")
-        .await
-    {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("logger: failed to open super.log: {e}");
-            return;
-        }
+    let Some(mut super_file) = open_log("logs/super.log").await else {
+        return;
     };
-    let mut super_writer = BufWriter::new(super_file);
-    let mut port_writers: HashMap<Arc<str>, BufWriter<fs::File>> = HashMap::new();
+    let mut port_files: HashMap<Arc<str>, File> = HashMap::new();
 
     while let Some(event) = log_rx.recv().await {
         let PortEvent::Data {
@@ -47,32 +47,19 @@ pub async fn run(mut log_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>) {
         let text = String::from_utf8_lossy(data);
 
         // Write to per-port file
-        if !port_writers.contains_key(port) {
-            let filename = format!("logs/{port}.log");
-            match OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&filename)
-                .await
-            {
-                Ok(f) => {
-                    port_writers.insert(port.clone(), BufWriter::new(f));
-                }
-                Err(e) => {
-                    eprintln!("logger: failed to open {filename}: {e}");
-                }
+        if let std::collections::hash_map::Entry::Vacant(entry) = port_files.entry(port.clone()) {
+            if let Some(f) = open_log(&format!("logs/{port}.log")).await {
+                entry.insert(f);
             }
         }
 
-        if let Some(w) = port_writers.get_mut(port) {
-            let line = format!("[{ts}] {text}\n");
-            let _ = w.write_all(line.as_bytes()).await;
-            let _ = w.flush().await;
+        if let Some(f) = port_files.get_mut(port) {
+            let _ = f.write_all(format!("[{ts}] {text}\n").as_bytes()).await;
         }
 
         // Write to super.log
-        let super_line = format!("[{ts}] [{port}] {text}\n");
-        let _ = super_writer.write_all(super_line.as_bytes()).await;
-        let _ = super_writer.flush().await;
+        let _ = super_file
+            .write_all(format!("[{ts}] [{port}] {text}\n").as_bytes())
+            .await;
     }
 }
