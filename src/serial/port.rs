@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
+use chrono::{DateTime, Local};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
@@ -18,7 +19,11 @@ use super::SerialError;
 
 /// Events emitted by serial ports.
 pub enum PortEvent {
-    Data { port: Arc<str>, data: Bytes },
+    Data {
+        port: Arc<str>,
+        data: Bytes,
+        timestamp: DateTime<Local>,
+    },
     Error(SerialError),
 }
 
@@ -33,7 +38,8 @@ impl Port {
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
-        event_tx: mpsc::Sender<Arc<PortEvent>>,
+        event_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
+        log_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
         notify_tx: mpsc::UnboundedSender<Notify>,
     ) -> Result<Self, SerialError> {
         let port = tokio_serial::new(config.path.to_string_lossy(), config.baud_rate)
@@ -55,8 +61,10 @@ impl Port {
                         let event = Arc::new(PortEvent::Data {
                             port: reader_name.clone(),
                             data,
+                            timestamp: Local::now(),
                         });
-                        if reader_tx.send(event).await.is_err() {
+                        let _ = log_tx.send(event.clone());
+                        if reader_tx.send(event).is_err() {
                             break; // receiver dropped
                         }
                     }

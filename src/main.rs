@@ -3,6 +3,7 @@
 mod app;
 mod config;
 mod error;
+mod logger;
 mod notify;
 mod serial;
 mod types;

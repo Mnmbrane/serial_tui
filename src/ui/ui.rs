@@ -6,10 +6,8 @@
 
 use std::{io, sync::Arc};
 
-use bytes::Bytes;
-use chrono::Local;
-
 use anyhow::Result;
+use bytes::Bytes;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -54,7 +52,7 @@ pub struct Ui {
     /// Reference to the serial manager for port operations
     hub: Arc<SerialHub>,
     /// Receiver for serial port events (data, errors, etc.)
-    serial_rx: mpsc::Receiver<Arc<PortEvent>>,
+    serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
     /// Receiver for structured notifications from background components
     notify_rx: mpsc::UnboundedReceiver<Notify>,
 
@@ -90,7 +88,7 @@ impl Ui {
     /// selected for sending by default.
     pub fn new(
         hub: Arc<SerialHub>,
-        serial_rx: mpsc::Receiver<Arc<PortEvent>>,
+        serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
         notify_rx: mpsc::UnboundedReceiver<Notify>,
     ) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
@@ -182,8 +180,12 @@ impl Ui {
     pub fn handle_events(&mut self) -> Result<()> {
         while let Ok(event) = self.serial_rx.try_recv() {
             match event.as_ref() {
-                PortEvent::Data { port, data } => {
-                    let timestamp = Local::now().format("%H:%M:%S%.3f");
+                PortEvent::Data {
+                    port,
+                    data,
+                    timestamp,
+                } => {
+                    let timestamp = timestamp.format("%H:%M:%S%.3f");
                     let text = String::from_utf8_lossy(data);
 
                     // Look up port color from config
