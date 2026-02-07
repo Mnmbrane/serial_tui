@@ -21,17 +21,21 @@ fn main() -> Result<()> {
 
     let config_path = config::ensure_config();
 
+    // Create channels
     let (notify_tx, notify_rx) = mpsc::unbounded_channel::<Notify>();
     let (log_tx, log_rx) = mpsc::unbounded_channel();
+    let (port_recv_chan_tx, port_recv_chan_rx) = mpsc::unbounded_channel();
 
-    let (mut hub, port_recv_rx) = SerialHub::new(notify_tx, log_tx);
+    // Start serial hub
+    let mut hub = SerialHub::new(port_recv_chan_tx, notify_tx, log_tx);
     hub.load_config(config_path)
         .unwrap_or_else(|e| eprintln!("{e}"));
 
+    // Start Logger
     tokio::spawn(logger::run(log_rx));
 
-    let hub = Arc::new(hub);
-    let mut ui = Ui::new(hub, port_recv_rx, notify_rx);
+    // UI will own the serial hub
+    let mut ui = Ui::new(hub, port_recv_chan_rx, notify_rx);
     ui.run()?;
 
     Ok(())

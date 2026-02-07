@@ -50,7 +50,7 @@ pub enum Focus {
 /// and redrawing the screen each frame.
 pub struct Ui {
     /// Reference to the serial manager for port operations
-    hub: Arc<SerialHub>,
+    hub: SerialHub,
     /// Receiver for serial port events (data, errors, etc.)
     serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
     /// Receiver for structured notifications from background components
@@ -87,7 +87,7 @@ impl Ui {
     /// initializes all widgets with default state. All ports are
     /// selected for sending by default.
     pub fn new(
-        hub: Arc<SerialHub>,
+        hub: SerialHub,
         serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
         notify_rx: mpsc::UnboundedReceiver<Notify>,
     ) -> Self {

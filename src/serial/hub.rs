@@ -24,19 +24,16 @@ pub struct SerialHub {
 impl SerialHub {
     /// Creates a new hub and returns the event receiver for the port data
     pub fn new(
+        port_recv_chan_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
         notify_tx: mpsc::UnboundedSender<Notify>,
         log_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-    ) -> (Self, mpsc::UnboundedReceiver<Arc<PortEvent>>) {
-        let (port_recv_chan_tx, port_recv_chan_rx) = mpsc::unbounded_channel();
-        (
-            Self {
-                ports: HashMap::new(),
-                port_recv_chan_tx,
-                log_tx,
-                notify_tx,
-            },
-            port_recv_chan_rx,
-        )
+    ) -> Self {
+        Self {
+            ports: HashMap::new(),
+            port_recv_chan_tx,
+            log_tx,
+            notify_tx,
+        }
     }
 
     /// Loads and opens all ports from a TOML config file.
