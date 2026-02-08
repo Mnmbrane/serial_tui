@@ -9,11 +9,8 @@ use std::io;
 use anyhow::Result;
 use bytes::Bytes;
 use crossterm::{
-    event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-    },
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     Frame,
@@ -24,6 +21,7 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::{
+    logger::LoggerEvent,
     serial::{PortEvent, hub::SerialHub},
     ui::{
         PortListAction, PortListPopup, SendGroupAction, SendGroupPopup, UiEvent,
@@ -52,6 +50,8 @@ pub struct Ui {
     hub: SerialHub,
     /// Receiver for UI events from background components
     ui_rx: mpsc::UnboundedReceiver<UiEvent>,
+    /// Sender for logger events
+    log_tx: mpsc::UnboundedSender<LoggerEvent>,
 
     /// Top bar showing port controls
     config_bar: ConfigBar,
@@ -83,13 +83,18 @@ impl Ui {
     /// Subscribes to the serial manager's broadcast channel and
     /// initializes all widgets with default state. All ports are
     /// selected for sending by default.
-    pub fn new(hub: SerialHub, ui_rx: mpsc::UnboundedReceiver<UiEvent>) -> Self {
+    pub fn new(
+        hub: SerialHub,
+        ui_rx: mpsc::UnboundedReceiver<UiEvent>,
+        log_tx: mpsc::UnboundedSender<LoggerEvent>,
+    ) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
         send_group_popup.select_all(&hub.list_ports());
 
         Self {
             hub,
             ui_rx,
+            log_tx,
             config_bar: ConfigBar::new(),
             display: Display::new(),
             input_bar: InputBar::new(),
@@ -108,19 +113,16 @@ impl Ui {
     /// draw/event loop until `exit` is set to true. Restores terminal
     /// state on exit.
     pub fn run(&mut self) -> Result<()> {
-        enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-
         let mut terminal = ratatui::init();
+        execute!(io::stdout(), EnableMouseCapture)?;
 
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
             self.handle_events()?;
         }
 
-        // Restore terminal state
-        disable_raw_mode()?;
-        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+        execute!(io::stdout(), DisableMouseCapture)?;
+        ratatui::restore();
         Ok(())
     }
 
@@ -287,26 +289,33 @@ impl Ui {
                         InputBarAction::OpenSendGroup => {
                             self.send_group_popup.toggle();
                         }
-                        InputBarAction::Send(text) => {
-                            let selected = self.send_group_popup.get_selected();
-                            if selected.is_empty() {
-                                self.notification_popup.show("No ports selected");
-                            } else {
-                                let result = if text.is_empty() {
-                                    self.hub.send_line_ending(&selected)
+                        InputBarAction::Send(text) => match text.as_str() {
+                            "/clear" => self.display.clear(),
+                            "/purge" => {
+                                let _ = self.log_tx.send(LoggerEvent::Purge);
+                            }
+                            _ => {
+                                let selected = self.send_group_popup.get_selected();
+                                if selected.is_empty() {
+                                    self.notification_popup.show("No ports selected");
                                 } else {
-                                    self.hub.send(&selected, Bytes::from(text))
-                                };
-                                match result {
-                                    Ok(_) => self
-                                        .notification_popup
-                                        .show(format!("Sent to {} port(s)", selected.len())),
-                                    Err(e) => {
-                                        self.notification_popup.show(format!("Send failed: {e}"))
+                                    let result = if text.is_empty() {
+                                        self.hub.send_line_ending(&selected)
+                                    } else {
+                                        self.hub.send(&selected, Bytes::from(text))
+                                    };
+                                    match result {
+                                        Ok(_) => self
+                                            .notification_popup
+                                            .show(format!("Sent to {} port(s)", selected.len())),
+                                        Err(e) => {
+                                            self.notification_popup
+                                                .show(format!("Send failed: {e}"))
+                                        }
                                     }
                                 }
                             }
-                        }
+                        },
                     }
                 }
             }

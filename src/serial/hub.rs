@@ -6,14 +6,6 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
-/// Commands sent to the hub via channel.
-pub enum HubEvent {
-    /// Send data to various ports
-    Send { ports: Vec<Arc<str>>, data: Bytes },
-    /// Send line ending to ports
-    SendLineEnding { ports: Vec<Arc<str>> },
-}
-
 use crate::{config::PortConfig, logger::LoggerEvent, ui::UiEvent};
 
 use super::{SerialError, port::Port};

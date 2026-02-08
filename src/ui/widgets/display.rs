@@ -76,6 +76,15 @@ impl Display {
         }
     }
 
+    /// Clears all lines and resets display state.
+    pub fn clear(&mut self) {
+        self.lines.clear();
+        self.cursor = 0;
+        self.view_start = 0;
+        self.selection_start = None;
+        self.search_matches.clear();
+    }
+
     /// Adds a pre-styled line to the buffer, removing oldest if at capacity.
     /// Auto-scrolls to bottom by moving cursor to the new line.
     pub fn push_line(&mut self, line: Line<'static>) {

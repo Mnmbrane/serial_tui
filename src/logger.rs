@@ -1,84 +1,115 @@
 //! Serial data logger — writes per-port and combined super log files.
 
-use std::{collections::HashMap, sync::Arc};
-
-use tokio::{
+use std::{
+    collections::HashMap,
     fs::{self, File, OpenOptions},
-    io::{AsyncSeekExt, AsyncWriteExt},
-    sync::mpsc,
+    io::{Seek, Write},
+    sync::Arc,
 };
 
-use crate::serial::PortEvent;
+use tokio::sync::mpsc;
+
+use crate::{serial::PortEvent, ui::UiEvent};
 
 /// Events sent to the logger via channel.
 pub enum LoggerEvent {
     SerialData(Arc<PortEvent>),
-    Clear,
+    Purge,
 }
 
-async fn open_log(path: &str) -> Option<File> {
-    OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .await
-        .map_err(|e| eprintln!("logger: failed to open {path}: {e}"))
-        .ok()
+/// Serial data logger that writes per-port and combined log files.
+pub struct Logger {
+    log_rx: mpsc::UnboundedReceiver<LoggerEvent>,
+    ui_tx: mpsc::UnboundedSender<UiEvent>,
+    super_file: File,
+    port_files: HashMap<Arc<str>, File>,
 }
 
-/// Runs the logger task, writing incoming serial data to per-port log files
-/// and a combined `super.log`.
-pub async fn run(mut log_rx: mpsc::UnboundedReceiver<LoggerEvent>) {
-    if let Err(e) = fs::create_dir_all("logs").await {
-        eprintln!("logger: failed to create logs/ directory: {e}");
-        return;
+impl Logger {
+    /// Creates a new logger, setting up the logs directory and super.log file.
+    /// Returns `None` if setup fails (notifies the UI).
+    pub fn new(
+        log_rx: mpsc::UnboundedReceiver<LoggerEvent>,
+        ui_tx: mpsc::UnboundedSender<UiEvent>,
+    ) -> Option<Self> {
+        if let Err(e) = fs::create_dir_all("logs") {
+            let _ = ui_tx.send(UiEvent::ShowNotification(
+                format!("Logger: failed to create logs/ directory: {e}").into(),
+            ));
+            return None;
+        }
+
+        let super_file = Self::open_log("logs/super.log", &ui_tx)?;
+
+        Some(Self {
+            log_rx,
+            ui_tx,
+            super_file,
+            port_files: HashMap::new(),
+        })
     }
 
-    let Some(mut super_file) = open_log("logs/super.log").await else {
-        return;
-    };
-    let mut port_files: HashMap<Arc<str>, File> = HashMap::new();
-
-    while let Some(event) = log_rx.recv().await {
-        match event {
-            LoggerEvent::Clear => {
-                let _ = super_file.set_len(0).await;
-                let _ = super_file.seek(std::io::SeekFrom::Start(0)).await;
-                for file in port_files.values_mut() {
-                    let _ = file.set_len(0).await;
-                    let _ = file.seek(std::io::SeekFrom::Start(0)).await;
-                }
-            }
-            LoggerEvent::SerialData(data) => {
-                let PortEvent::Data {
-                    port,
-                    data,
-                    timestamp,
-                } = data.as_ref()
-                else {
-                    continue;
-                };
-
-                let ts = timestamp.format("%H:%M:%S%.3f");
-                let text = String::from_utf8_lossy(data);
-                let text = text.trim_end_matches(['\n', '\r']);
-
-                // Write to per-port file
-                if !port_files.contains_key(port) {
-                    if let Some(f) = open_log(&format!("logs/{port}.log")).await {
-                        port_files.insert(port.clone(), f);
-                    }
-                }
-
-                if let Some(f) = port_files.get_mut(port) {
-                    let _ = f.write_all(format!("[{ts}] {text}\n").as_bytes()).await;
-                }
-
-                // Write to super.log
-                let _ = super_file
-                    .write_all(format!("[{ts}] [{port}] {text}\n").as_bytes())
-                    .await;
+    /// Runs the logger event loop until the channel closes.
+    pub async fn run(mut self) {
+        while let Some(event) = self.log_rx.recv().await {
+            match event {
+                LoggerEvent::Purge => self.purge(),
+                LoggerEvent::SerialData(data) => self.handle_data(&data),
             }
         }
+    }
+
+    fn purge(&mut self) {
+        let _ = self.super_file.set_len(0);
+        let _ = self.super_file.rewind();
+        for file in self.port_files.values_mut() {
+            let _ = file.set_len(0);
+            let _ = file.rewind();
+        }
+        let _ = self
+            .ui_tx
+            .send(UiEvent::ShowNotification("Logs purged.".into()));
+    }
+
+    fn handle_data(&mut self, event: &PortEvent) {
+        let PortEvent::Data {
+            port,
+            data,
+            timestamp,
+        } = event
+        else {
+            return;
+        };
+
+        let ts = timestamp.format("%H:%M:%S%.3f");
+        let text = String::from_utf8_lossy(data);
+        let text = text.trim_end_matches(['\n', '\r']);
+
+        // Write to per-port file
+        if !self.port_files.contains_key(port) {
+            if let Some(f) = Self::open_log(&format!("logs/{port}.log"), &self.ui_tx) {
+                self.port_files.insert(port.clone(), f);
+            }
+        }
+
+        if let Some(f) = self.port_files.get_mut(port) {
+            let _ = write!(f, "[{ts}] {text}\n");
+        }
+
+        // Write to super.log
+        let _ = write!(self.super_file, "[{ts}] [{port}] {text}\n");
+    }
+
+    fn open_log(path: &str, ui_tx: &mpsc::UnboundedSender<UiEvent>) -> Option<File> {
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| {
+                ui_tx.send(UiEvent::ShowNotification(
+                    format!("Logger: failed to open {path}: {e}").into(),
+                ))
+            })
+            .ok()
     }
 }

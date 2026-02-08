@@ -10,7 +10,7 @@ mod ui;
 use anyhow::Result;
 use tokio::sync::mpsc;
 
-use crate::{serial::hub::SerialHub, ui::Ui};
+use crate::{logger::Logger, serial::hub::SerialHub, ui::Ui};
 
 fn main() -> Result<()> {
     let rt = tokio::runtime::Runtime::new()?;
@@ -23,15 +23,19 @@ fn main() -> Result<()> {
     let (ui_tx, ui_rx) = mpsc::unbounded_channel();
 
     // Start serial hub
-    let mut hub = SerialHub::new(ui_tx, log_tx);
-    hub.load_config(config_path)
-        .unwrap_or_else(|e| eprintln!("{e}"));
+    let log_tx_ui = log_tx.clone();
+    let mut hub = SerialHub::new(ui_tx.clone(), log_tx);
+    hub.load_config(config_path).unwrap_or_else(|e| {
+        let _ = ui_tx.send(ui::UiEvent::ShowNotification(format!("{e}").into()));
+    });
 
     // Start Logger
-    tokio::spawn(logger::run(log_rx));
+    if let Some(logger) = Logger::new(log_rx, ui_tx) {
+        tokio::spawn(logger.run());
+    }
 
     // UI will own the serial hub
-    let mut ui = Ui::new(hub, ui_rx);
+    let mut ui = Ui::new(hub, ui_rx, log_tx_ui);
     ui.run()?;
 
     Ok(())

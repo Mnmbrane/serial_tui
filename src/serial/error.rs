@@ -14,9 +14,6 @@ pub enum SerialError {
     #[error("failed to open port: {0}")]
     Open(#[from] serialport::Error),
 
-    #[error("read error: {0}")]
-    Read(std::io::Error),
-
     #[error("write channel full or closed")]
     TrySend(#[from] TrySendError<Bytes>),
 }
