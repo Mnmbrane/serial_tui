@@ -9,9 +9,7 @@ arboard = "3"
 bytes = "1"
 chrono = "0.4"
 crossterm = "0.29"
-rand = "0.9"
 ratatui = "0.30"
-regex = "1"
 serde = { version = "1", features = ["derive"] }
 serialport = { version = "4.8.1", features = ["serde"] }
 thiserror = "2.0.17"

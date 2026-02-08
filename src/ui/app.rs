@@ -9,7 +9,9 @@ use std::io;
 use anyhow::Result;
 use bytes::Bytes;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    },
     execute,
 };
 use ratatui::{
@@ -95,7 +97,7 @@ impl Ui {
             hub,
             ui_rx,
             log_tx,
-            config_bar: ConfigBar::new(),
+            config_bar: ConfigBar,
             display: Display::new(),
             input_bar: InputBar::new(),
             port_list_popup: PortListPopup::new(),
@@ -198,9 +200,6 @@ impl Ui {
                         ]);
                         self.display.push_line(line);
                     }
-                    PortEvent::Error(err) => {
-                        self.notification_popup.show(format!("Error: {err}"));
-                    }
                 },
                 UiEvent::ShowNotification(msg) => {
                     self.notification_popup.show(msg.to_string());
@@ -229,9 +228,7 @@ impl Ui {
         if self.port_list_popup.visible {
             if let Some(action) = self.port_list_popup.handle_key(key, &ports) {
                 match action {
-                    PortListAction::Select(_name) => {
-                        // TODO: handle port selection
-                    }
+                    PortListAction::Select(_name) => {}
                     PortListAction::Close => {}
                 }
             }
@@ -266,7 +263,7 @@ impl Ui {
                 if let Some(action) = self.config_bar.handle_key(key) {
                     match action {
                         ConfigAction::OpenPorts => self.port_list_popup.toggle(),
-                        ConfigAction::AddPort => { /* TODO */ }
+                        ConfigAction::AddPort => {}
                         ConfigAction::Notify(msg) => self.notification_popup.show(msg),
                     }
                 }
@@ -308,10 +305,9 @@ impl Ui {
                                         Ok(_) => self
                                             .notification_popup
                                             .show(format!("Sent to {} port(s)", selected.len())),
-                                        Err(e) => {
-                                            self.notification_popup
-                                                .show(format!("Send failed: {e}"))
-                                        }
+                                        Err(e) => self
+                                            .notification_popup
+                                            .show(format!("Send failed: {e}")),
                                     }
                                 }
                             }

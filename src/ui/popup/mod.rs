@@ -15,7 +15,7 @@ pub use send_group::{SendGroupAction, SendGroupPopup};
 use ratatui::{
     Frame,
     layout::{Constraint, Flex, Layout, Rect},
-    widgets::Clear,
+    widgets::{Clear, ListState},
 };
 
 /// Helper for creating centered popup overlays.
@@ -60,4 +60,28 @@ impl Popup {
     pub fn clear(&self, frame: &mut Frame, area: Rect) {
         frame.render_widget(Clear, area);
     }
+}
+
+/// Moves a `ListState` selection to the next item (wraps around).
+fn select_next(state: &mut ListState, len: usize) {
+    if len == 0 {
+        return;
+    }
+    let i = match state.selected() {
+        Some(i) => (i + 1) % len,
+        None => 0,
+    };
+    state.select(Some(i));
+}
+
+/// Moves a `ListState` selection to the previous item (wraps around).
+fn select_prev(state: &mut ListState, len: usize) {
+    if len == 0 {
+        return;
+    }
+    let i = match state.selected() {
+        Some(0) | None => len - 1,
+        Some(i) => i - 1,
+    };
+    state.select(Some(i));
 }

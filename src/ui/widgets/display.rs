@@ -46,7 +46,7 @@ pub struct Display {
     search_mode: bool,
     /// Current search query
     search_query: String,
-    /// Indices of lines matching the search
+    /// Sorted indices of lines matching the search
     search_matches: Vec<usize>,
     /// Current match index (for n/N navigation)
     search_match_idx: usize,
@@ -268,7 +268,6 @@ impl Display {
         let query_lower = self.search_query.to_lowercase();
 
         for (idx, line) in self.lines.iter().enumerate() {
-            // Extract text from line spans
             let text: String = line
                 .spans
                 .iter()
@@ -281,8 +280,8 @@ impl Display {
         }
 
         // Jump to first match if any
-        if !self.search_matches.is_empty() {
-            self.cursor = self.search_matches[0];
+        if let Some(&first) = self.search_matches.first() {
+            self.cursor = first;
             self.adjust_scroll(height);
         }
     }
@@ -315,7 +314,7 @@ impl Display {
 
     /// Returns true if the given line index is a search match.
     fn is_match(&self, idx: usize) -> bool {
-        self.search_matches.contains(&idx)
+        self.search_matches.binary_search(&idx).is_ok()
     }
 
     /// Adjusts view_start to keep cursor within scroll margins.

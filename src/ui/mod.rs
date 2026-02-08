@@ -9,11 +9,11 @@ use std::sync::Arc;
 use crate::serial::PortEvent;
 
 mod popup;
-mod ui;
+mod app;
 mod widgets;
 
+pub use app::Ui;
 pub use popup::{PortListAction, PortListPopup, SendGroupAction, SendGroupPopup};
-pub use ui::Ui;
 
 /// Events sent to the UI from background components.
 pub enum UiEvent {

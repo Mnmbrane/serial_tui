@@ -76,19 +76,18 @@ impl Logger {
             port,
             data,
             timestamp,
-        } = event
-        else {
-            return;
-        };
+        } = event;
 
         let ts = timestamp.format("%H:%M:%S%.3f");
         let text = String::from_utf8_lossy(data);
         let text = text.trim_end_matches(['\n', '\r']);
 
         // Write to per-port file
-        if !self.port_files.contains_key(port) {
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            self.port_files.entry(port.clone())
+        {
             if let Some(f) = Self::open_log(&format!("logs/{port}.log"), &self.ui_tx) {
-                self.port_files.insert(port.clone(), f);
+                entry.insert(f);
             }
         }
 

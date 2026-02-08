@@ -15,7 +15,7 @@ use ratatui::{
 
 use crate::config::PortConfig;
 
-use super::Popup;
+use super::{Popup, select_next, select_prev};
 
 /// Actions returned by the send group popup.
 pub enum SendGroupAction {
@@ -150,11 +150,11 @@ impl SendGroupPopup {
                 Some(SendGroupAction::Close)
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.select_prev(ports.len());
+                select_prev(&mut self.list_state, ports.len());
                 None
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.select_next(ports.len());
+                select_next(&mut self.list_state, ports.len());
                 None
             }
             KeyCode::Char(' ') | KeyCode::Enter => {
@@ -169,42 +169,11 @@ impl SendGroupPopup {
     fn toggle_selected(&mut self, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         if let Some(i) = self.list_state.selected() {
             if let Some((name, _)) = ports.get(i) {
-                if self.selected.contains(name) {
-                    self.selected.remove(name);
-                } else {
+                if !self.selected.remove(name) {
                     self.selected.insert(name.clone());
                 }
             }
         }
     }
 
-    /// Moves cursor to the next item (wraps around).
-    fn select_next(&mut self, len: usize) {
-        if len == 0 {
-            return;
-        }
-        let i = match self.list_state.selected() {
-            Some(i) => (i + 1) % len,
-            None => 0,
-        };
-        self.list_state.select(Some(i));
-    }
-
-    /// Moves cursor to the previous item (wraps around).
-    fn select_prev(&mut self, len: usize) {
-        if len == 0 {
-            return;
-        }
-        let i = match self.list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    len - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.list_state.select(Some(i));
-    }
 }

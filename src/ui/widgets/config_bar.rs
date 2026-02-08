@@ -28,11 +28,6 @@ pub enum ConfigAction {
 pub struct ConfigBar;
 
 impl ConfigBar {
-    /// Creates a new config bar.
-    pub fn new() -> Self {
-        Self {}
-    }
-
     /// Renders the config bar with keybinding hints.
     ///
     /// Shows `[p]orts  [a]dd` with highlighted key letters.

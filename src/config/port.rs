@@ -30,11 +30,11 @@ impl LineEnding {
     }
 }
 
-impl TryFrom<String> for LineEnding {
-    type Error = ConfigError;
+impl std::str::FromStr for LineEnding {
+    type Err = ConfigError;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
             "lf" | "\n" => Ok(LineEnding::LF),
             "cr" | "\r" => Ok(LineEnding::CR),
             "crlf" | "\r\n" => Ok(LineEnding::CRLF),
@@ -44,7 +44,7 @@ impl TryFrom<String> for LineEnding {
 }
 
 /// Configuration for a single serial port connection.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(default)]
 pub struct PortConfig {
     /// Device path (e.g., "/dev/ttyUSB0", "COM3")
@@ -55,15 +55,6 @@ pub struct PortConfig {
     pub line_ending: LineEnding,
     /// Display color for this port's output in the TUI
     pub color: Color,
-}
-
-impl PartialEq for PortConfig {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
-            && self.baud_rate == other.baud_rate
-            && self.line_ending == other.line_ending
-            && self.color == other.color
-    }
 }
 
 impl Default for PortConfig {

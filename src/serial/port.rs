@@ -10,9 +10,7 @@ use tokio::{
 };
 use tokio_serial::SerialPortBuilderExt;
 
-use crate::{config::PortConfig, logger::LoggerEvent, ui::UiEvent};
-
-use super::SerialError;
+use crate::{config::PortConfig, logger::LoggerEvent, serial::SerialError, ui::UiEvent};
 
 /// Events emitted by serial ports.
 pub enum PortEvent {
@@ -21,7 +19,6 @@ pub enum PortEvent {
         data: Bytes,
         timestamp: DateTime<Local>,
     },
-    Error(SerialError),
 }
 
 /// A connected serial port with running reader/writer tasks.

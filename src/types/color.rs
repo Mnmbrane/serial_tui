@@ -50,21 +50,20 @@ impl FromStr for Color {
 
 impl Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self.0 {
-            RatatuiColor::Rgb(r, g, b) => &format!("#{r:02X}{g:02X}{b:02X}"),
-            RatatuiColor::Reset => "reset",
-            RatatuiColor::Black => "black",
-            RatatuiColor::Red => "red",
-            RatatuiColor::Green => "green",
-            RatatuiColor::Yellow => "yellow",
-            RatatuiColor::Blue => "blue",
-            RatatuiColor::Magenta => "magenta",
-            RatatuiColor::Cyan => "cyan",
-            RatatuiColor::Gray => "gray",
-            RatatuiColor::White => "white",
-            _ => "reset",
-        };
-        write!(f, "{s}")
+        match self.0 {
+            RatatuiColor::Rgb(r, g, b) => write!(f, "#{r:02X}{g:02X}{b:02X}"),
+            RatatuiColor::Reset => f.write_str("reset"),
+            RatatuiColor::Black => f.write_str("black"),
+            RatatuiColor::Red => f.write_str("red"),
+            RatatuiColor::Green => f.write_str("green"),
+            RatatuiColor::Yellow => f.write_str("yellow"),
+            RatatuiColor::Blue => f.write_str("blue"),
+            RatatuiColor::Magenta => f.write_str("magenta"),
+            RatatuiColor::Cyan => f.write_str("cyan"),
+            RatatuiColor::Gray => f.write_str("gray"),
+            RatatuiColor::White => f.write_str("white"),
+            _ => f.write_str("reset"),
+        }
     }
 }
 
