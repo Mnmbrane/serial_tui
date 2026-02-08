@@ -10,10 +10,7 @@ use tokio::{
 };
 use tokio_serial::SerialPortBuilderExt;
 
-use crate::{
-    config::PortConfig,
-    notify::{Notify, NotifyLevel},
-};
+use crate::{config::PortConfig, logger::LoggerEvent, ui::UiEvent};
 
 use super::SerialError;
 
@@ -38,9 +35,8 @@ impl Port {
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
-        event_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-        log_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-        notify_tx: mpsc::UnboundedSender<Notify>,
+        ui_tx: mpsc::UnboundedSender<UiEvent>,
+        log_tx: mpsc::UnboundedSender<LoggerEvent>,
     ) -> Result<Self, SerialError> {
         let port = tokio_serial::new(config.path.to_string_lossy(), config.baud_rate)
             .open_native_async()?;
@@ -49,8 +45,7 @@ impl Port {
 
         // Spawn reader task
         let reader_name = name.clone();
-        let reader_tx = event_tx.clone();
-        let reader_notify_tx = notify_tx.clone();
+        let reader_ui_tx = ui_tx.clone();
         tokio::spawn(async move {
             let mut buf = [0u8; 1024];
             loop {
@@ -58,22 +53,23 @@ impl Port {
                     Ok(0) => break,
                     Ok(n) => {
                         let data = Bytes::copy_from_slice(&buf[..n]);
-                        let event = Arc::new(PortEvent::Data {
+                        let port_event = PortEvent::Data {
                             port: reader_name.clone(),
                             data,
                             timestamp: Local::now(),
-                        });
-                        let _ = log_tx.send(event.clone());
-                        if reader_tx.send(event).is_err() {
+                        };
+
+                        let event = Arc::new(port_event);
+                        let _ = log_tx.send(LoggerEvent::SerialData(event.clone()));
+
+                        if reader_ui_tx.send(UiEvent::PortData(event)).is_err() {
                             break; // receiver dropped
                         }
                     }
                     Err(e) => {
-                        let _ = reader_notify_tx.send(Notify {
-                            level: NotifyLevel::Error,
-                            source: reader_name.clone(),
-                            message: format!("read error: {e}"),
-                        });
+                        let _ = reader_ui_tx.send(UiEvent::ShowNotification(
+                            format!("{reader_name}: read error: {e}").into(),
+                        ));
                         break;
                     }
                 }
@@ -86,11 +82,9 @@ impl Port {
         tokio::spawn(async move {
             while let Some(data) = writer_rx.recv().await {
                 if let Err(e) = writer.write_all(&data).await {
-                    let _ = notify_tx.send(Notify {
-                        level: NotifyLevel::Error,
-                        source: writer_name.clone(),
-                        message: format!("write error: {e}"),
-                    });
+                    let _ = ui_tx.send(UiEvent::ShowNotification(
+                        format!("{writer_name}: write error: {e}").into(),
+                    ));
                     break;
                 }
             }

@@ -6,33 +6,35 @@ use anyhow::{Context, Result};
 use bytes::Bytes;
 use tokio::sync::mpsc;
 
-use crate::{config::PortConfig, notify::Notify};
+/// Commands sent to the hub via channel.
+pub enum HubEvent {
+    /// Send data to various ports
+    Send { ports: Vec<Arc<str>>, data: Bytes },
+    /// Send line ending to ports
+    SendLineEnding { ports: Vec<Arc<str>> },
+}
 
-use super::{
-    SerialError,
-    port::{Port, PortEvent},
-};
+use crate::{config::PortConfig, logger::LoggerEvent, ui::UiEvent};
+
+use super::{SerialError, port::Port};
 
 /// Manages multiple serial port connections.
 pub struct SerialHub {
     ports: HashMap<Arc<str>, Port>,
-    port_recv_chan_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-    log_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-    notify_tx: mpsc::UnboundedSender<Notify>,
+    ui_tx: mpsc::UnboundedSender<UiEvent>,
+    log_tx: mpsc::UnboundedSender<LoggerEvent>,
 }
 
 impl SerialHub {
     /// Creates a new hub and returns the event receiver for the port data
     pub fn new(
-        port_recv_chan_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
-        notify_tx: mpsc::UnboundedSender<Notify>,
-        log_tx: mpsc::UnboundedSender<Arc<PortEvent>>,
+        ui_tx: mpsc::UnboundedSender<UiEvent>,
+        log_tx: mpsc::UnboundedSender<LoggerEvent>,
     ) -> Self {
         Self {
             ports: HashMap::new(),
-            port_recv_chan_tx,
+            ui_tx,
             log_tx,
-            notify_tx,
         }
     }
 
@@ -59,9 +61,8 @@ impl SerialHub {
         let port = Port::open(
             name.clone(),
             config,
-            self.port_recv_chan_tx.clone(),
+            self.ui_tx.clone(),
             self.log_tx.clone(),
-            self.notify_tx.clone(),
         )?;
         self.ports.insert(name, port);
         Ok(())

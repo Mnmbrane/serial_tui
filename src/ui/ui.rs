@@ -4,7 +4,7 @@
 //! keyboard input to the appropriate component based on focus and
 //! popup visibility.
 
-use std::{io, sync::Arc};
+use std::io;
 
 use anyhow::Result;
 use bytes::Bytes;
@@ -24,10 +24,9 @@ use ratatui::{
 use tokio::sync::mpsc;
 
 use crate::{
-    notify::Notify,
     serial::{PortEvent, hub::SerialHub},
     ui::{
-        PortListAction, PortListPopup, SendGroupAction, SendGroupPopup,
+        PortListAction, PortListPopup, SendGroupAction, SendGroupPopup, UiEvent,
         popup::Notification,
         widgets::{ConfigAction, DisplayAction, InputBarAction},
     },
@@ -51,10 +50,8 @@ pub enum Focus {
 pub struct Ui {
     /// Reference to the serial manager for port operations
     hub: SerialHub,
-    /// Receiver for serial port events (data, errors, etc.)
-    serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
-    /// Receiver for structured notifications from background components
-    notify_rx: mpsc::UnboundedReceiver<Notify>,
+    /// Receiver for UI events from background components
+    ui_rx: mpsc::UnboundedReceiver<UiEvent>,
 
     /// Top bar showing port controls
     config_bar: ConfigBar,
@@ -86,18 +83,13 @@ impl Ui {
     /// Subscribes to the serial manager's broadcast channel and
     /// initializes all widgets with default state. All ports are
     /// selected for sending by default.
-    pub fn new(
-        hub: SerialHub,
-        serial_rx: mpsc::UnboundedReceiver<Arc<PortEvent>>,
-        notify_rx: mpsc::UnboundedReceiver<Notify>,
-    ) -> Self {
+    pub fn new(hub: SerialHub, ui_rx: mpsc::UnboundedReceiver<UiEvent>) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
         send_group_popup.select_all(&hub.list_ports());
 
         Self {
             hub,
-            serial_rx,
-            notify_rx,
+            ui_rx,
             config_bar: ConfigBar::new(),
             display: Display::new(),
             input_bar: InputBar::new(),
@@ -178,47 +170,42 @@ impl Ui {
     /// Uses 16ms timeout (~60fps) for responsive UI updates.
     /// Only processes key press events (ignores key release).
     pub fn handle_events(&mut self) -> Result<()> {
-        while let Ok(event) = self.serial_rx.try_recv() {
-            match event.as_ref() {
-                PortEvent::Data {
-                    port,
-                    data,
-                    timestamp,
-                } => {
-                    let timestamp = timestamp.format("%H:%M:%S%.3f");
-                    let text = String::from_utf8_lossy(data);
+        while let Ok(event) = self.ui_rx.try_recv() {
+            match event {
+                UiEvent::PortData(port_event) => match port_event.as_ref() {
+                    PortEvent::Data {
+                        port,
+                        data,
+                        timestamp,
+                    } => {
+                        let timestamp = timestamp.format("%H:%M:%S%.3f");
+                        let text = String::from_utf8_lossy(data);
 
-                    // Look up port color from config
-                    let port_color = self
-                        .hub
-                        .get_config(port)
-                        .map(|info| info.color.0)
-                        .unwrap_or(Color::Reset);
+                        // Look up port color from config
+                        let port_color = self
+                            .hub
+                            .get_config(port)
+                            .map(|info| info.color.0)
+                            .unwrap_or(Color::Reset);
 
-                    // Build styled line with colored port name
-                    let line = Line::from(vec![
-                        Span::raw(format!("[{timestamp}] ")),
-                        Span::styled(format!("[{port}]"), Style::default().fg(port_color)),
-                        Span::raw(format!(" {text}")),
-                    ]);
-                    self.display.push_line(line);
-                }
-                PortEvent::Error(err) => {
-                    self.notification_popup.show(format!("Error: {err}"));
+                        // Build styled line with colored port name
+                        let line = Line::from(vec![
+                            Span::raw(format!("[{timestamp}] ")),
+                            Span::styled(format!("[{port}]"), Style::default().fg(port_color)),
+                            Span::raw(format!(" {text}")),
+                        ]);
+                        self.display.push_line(line);
+                    }
+                    PortEvent::Error(err) => {
+                        self.notification_popup.show(format!("Error: {err}"));
+                    }
+                },
+                UiEvent::ShowNotification(msg) => {
+                    self.notification_popup.show(msg.to_string());
                 }
             }
         }
 
-        // Drain structured notifications from background components
-        while let Ok(notif) = self.notify_rx.try_recv() {
-            let prefix = match notif.level {
-                crate::notify::NotifyLevel::Info => "Info",
-                crate::notify::NotifyLevel::Warn => "Warn",
-                crate::notify::NotifyLevel::Error => "Error",
-            };
-            self.notification_popup
-                .show(format!("[{prefix}] [{}] {}", notif.source, notif.message));
-        }
         if event::poll(std::time::Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
