@@ -26,7 +26,7 @@ use crate::{
     logger::LoggerEvent,
     serial::{PortEvent, hub::SerialHub},
     ui::{
-        PortListAction, PortListPopup, SendGroupAction, SendGroupPopup, UiEvent,
+        HelpPopup, PortListAction, PortListPopup, SendGroupAction, SendGroupPopup, UiEvent,
         popup::Notification,
         widgets::{ConfigAction, DisplayAction, InputBarAction},
     },
@@ -68,6 +68,8 @@ pub struct Ui {
     send_group_popup: SendGroupPopup,
     /// Toast notification overlay
     notification_popup: Notification,
+    /// Modal popup showing keyboard shortcuts
+    help_popup: HelpPopup,
 
     /// Currently focused widget
     focus: Focus,
@@ -103,6 +105,7 @@ impl Ui {
             port_list_popup: PortListPopup::new(),
             send_group_popup,
             notification_popup: Notification::new(),
+            help_popup: HelpPopup::new(),
             focus: Focus::InputBar,
             display_height: 0,
             exit: false,
@@ -162,6 +165,10 @@ impl Ui {
 
         if self.send_group_popup.visible {
             self.send_group_popup.render(frame, &ports);
+        }
+
+        if self.help_popup.visible {
+            self.help_popup.render(frame);
         }
 
         if self.notification_popup.is_visible() {
@@ -225,6 +232,11 @@ impl Ui {
         let ports = self.hub.list_ports();
 
         // Popups capture all input when visible
+        if self.help_popup.visible {
+            self.help_popup.handle_key(key);
+            return;
+        }
+
         if self.port_list_popup.visible {
             if let Some(action) = self.port_list_popup.handle_key(key, &ports) {
                 match action {
@@ -252,6 +264,10 @@ impl Ui {
             }
             KeyCode::Tab => {
                 self.cycle_focus();
+                return;
+            }
+            KeyCode::Char('?') => {
+                self.help_popup.toggle();
                 return;
             }
             _ => {}
@@ -288,6 +304,7 @@ impl Ui {
                         }
                         InputBarAction::Send(text) => match text.as_str() {
                             "/clear" => self.display.clear(),
+                            "/help" => self.help_popup.toggle(),
                             "/purge" => {
                                 let _ = self.log_tx.send(LoggerEvent::Purge);
                             }

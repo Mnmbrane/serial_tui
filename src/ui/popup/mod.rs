@@ -4,10 +4,12 @@
 //! input while visible. They don't store port data - it's passed in
 //! during render/handle_key to stay in sync with the serial manager.
 
+mod help;
 mod notification;
 mod port_list;
 mod send_group;
 
+pub use help::HelpPopup;
 pub use notification::Notification;
 pub use port_list::{PortListAction, PortListPopup};
 pub use send_group::{SendGroupAction, SendGroupPopup};
