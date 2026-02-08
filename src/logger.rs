@@ -61,6 +61,7 @@ pub async fn run(mut log_rx: mpsc::UnboundedReceiver<LoggerEvent>) {
 
                 let ts = timestamp.format("%H:%M:%S%.3f");
                 let text = String::from_utf8_lossy(data);
+                let text = text.trim_end_matches(['\n', '\r']);
 
                 // Write to per-port file
                 if !port_files.contains_key(port) {
