@@ -72,7 +72,7 @@ impl Logger {
     }
 
     fn handle_data(&mut self, event: &PortEvent) {
-        let PortEvent::Data {
+        let PortEvent {
             port,
             data,
             timestamp,

@@ -183,31 +183,26 @@ impl Ui {
     pub fn handle_events(&mut self) -> Result<()> {
         while let Ok(event) = self.ui_rx.try_recv() {
             match event {
-                UiEvent::PortData(port_event) => match port_event.as_ref() {
-                    PortEvent::Data {
-                        port,
-                        data,
-                        timestamp,
-                    } => {
-                        let timestamp = timestamp.format("%H:%M:%S%.3f");
-                        let text = String::from_utf8_lossy(data);
+                UiEvent::PortData(port_event) => {
+                    let PortEvent { port, data, timestamp } = port_event.as_ref();
+                    let timestamp = timestamp.format("%H:%M:%S%.3f");
+                    let text = String::from_utf8_lossy(data);
 
-                        // Look up port color from config
-                        let port_color = self
-                            .hub
-                            .get_config(port)
-                            .map(|info| info.color.0)
-                            .unwrap_or(Color::Reset);
+                    // Look up port color from config
+                    let port_color = self
+                        .hub
+                        .get_config(port)
+                        .map(|info| info.color.0)
+                        .unwrap_or(Color::Reset);
 
-                        // Build styled line with colored port name
-                        let line = Line::from(vec![
-                            Span::raw(format!("[{timestamp}] ")),
-                            Span::styled(format!("[{port}]"), Style::default().fg(port_color)),
-                            Span::raw(format!(" {text}")),
-                        ]);
-                        self.display.push_line(line);
-                    }
-                },
+                    // Build styled line with colored port name
+                    let line = Line::from(vec![
+                        Span::raw(format!("[{timestamp}] ")),
+                        Span::styled(format!("[{port}]"), Style::default().fg(port_color)),
+                        Span::raw(format!(" {text}")),
+                    ]);
+                    self.display.push_line(line);
+                }
                 UiEvent::ShowNotification(msg) => {
                     self.notification_popup.show(msg.to_string());
                 }

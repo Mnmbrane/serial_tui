@@ -12,13 +12,11 @@ use tokio_serial::SerialPortBuilderExt;
 
 use crate::{config::PortConfig, logger::LoggerEvent, serial::SerialError, ui::UiEvent};
 
-/// Events emitted by serial ports.
-pub enum PortEvent {
-    Data {
-        port: Arc<str>,
-        data: Bytes,
-        timestamp: DateTime<Local>,
-    },
+/// Event emitted when a serial port receives data.
+pub struct PortEvent {
+    pub port: Arc<str>,
+    pub data: Bytes,
+    pub timestamp: DateTime<Local>,
 }
 
 /// A connected serial port with running reader/writer tasks.
@@ -50,7 +48,7 @@ impl Port {
                     Ok(0) => break,
                     Ok(n) => {
                         let data = Bytes::copy_from_slice(&buf[..n]);
-                        let port_event = PortEvent::Data {
+                        let port_event = PortEvent {
                             port: reader_name.clone(),
                             data,
                             timestamp: Local::now(),
