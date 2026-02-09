@@ -20,7 +20,7 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
 };
-use tokio::sync::mpsc;
+use std::sync::mpsc;
 
 use crate::{
     logger::LoggerEvent,
@@ -51,9 +51,9 @@ pub struct Ui {
     /// Reference to the serial manager for port operations
     hub: SerialHub,
     /// Receiver for UI events from background components
-    ui_rx: mpsc::UnboundedReceiver<UiEvent>,
+    ui_rx: mpsc::Receiver<UiEvent>,
     /// Sender for logger events
-    log_tx: mpsc::UnboundedSender<LoggerEvent>,
+    log_tx: mpsc::Sender<LoggerEvent>,
 
     /// Top bar showing port controls
     config_bar: ConfigBar,
@@ -89,8 +89,8 @@ impl Ui {
     /// selected for sending by default.
     pub fn new(
         hub: SerialHub,
-        ui_rx: mpsc::UnboundedReceiver<UiEvent>,
-        log_tx: mpsc::UnboundedSender<LoggerEvent>,
+        ui_rx: mpsc::Receiver<UiEvent>,
+        log_tx: mpsc::Sender<LoggerEvent>,
     ) -> Self {
         let mut send_group_popup = SendGroupPopup::new();
         send_group_popup.select_all(&hub.list_ports());

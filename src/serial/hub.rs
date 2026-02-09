@@ -1,10 +1,9 @@
 //! Central hub for multiple serial port connections.
 
-use std::{collections::HashMap, fs::read_to_string, path::Path, sync::Arc};
+use std::{collections::HashMap, fs::read_to_string, path::Path, sync::{Arc, mpsc}};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use tokio::sync::mpsc;
 
 use crate::{config::PortConfig, logger::LoggerEvent, ui::UiEvent};
 
@@ -13,15 +12,15 @@ use super::{SerialError, port::Port};
 /// Manages multiple serial port connections.
 pub struct SerialHub {
     ports: HashMap<Arc<str>, Port>,
-    ui_tx: mpsc::UnboundedSender<UiEvent>,
-    log_tx: mpsc::UnboundedSender<LoggerEvent>,
+    ui_tx: mpsc::Sender<UiEvent>,
+    log_tx: mpsc::Sender<LoggerEvent>,
 }
 
 impl SerialHub {
     /// Creates a new hub and returns the event receiver for the port data
     pub fn new(
-        ui_tx: mpsc::UnboundedSender<UiEvent>,
-        log_tx: mpsc::UnboundedSender<LoggerEvent>,
+        ui_tx: mpsc::Sender<UiEvent>,
+        log_tx: mpsc::Sender<LoggerEvent>,
     ) -> Self {
         Self {
             ports: HashMap::new(),
@@ -41,7 +40,9 @@ impl SerialHub {
 
         for (name, config) in ports {
             if let Err(e) = self.open(name.clone(), config) {
-                eprintln!("failed to open port {name}: {e}");
+                let _ = self.ui_tx.send(UiEvent::ShowNotification(
+                    format!("failed to open port {name}: {e}").into(),
+                ));
             }
         }
         Ok(())

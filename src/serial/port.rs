@@ -1,14 +1,14 @@
-//! Single port connection with async reader/writer tasks.
+//! Single port connection with reader/writer threads.
 
-use std::sync::Arc;
+use std::{
+    io::{Read, Write},
+    sync::{Arc, mpsc},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use chrono::{DateTime, Local};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    sync::mpsc,
-};
-use tokio_serial::SerialPortBuilderExt;
+use serialport::SerialPort;
 
 use crate::{config::PortConfig, logger::LoggerEvent, serial::SerialError, ui::UiEvent};
 
@@ -19,32 +19,33 @@ pub struct PortEvent {
     pub timestamp: DateTime<Local>,
 }
 
-/// A connected serial port with running reader/writer tasks.
+/// A connected serial port with running reader/writer threads.
 pub struct Port {
-    pub writer_tx: mpsc::Sender<Bytes>,
+    pub writer_tx: mpsc::SyncSender<Bytes>,
     pub config: Arc<PortConfig>,
 }
 
 impl Port {
-    /// Opens a port and spawns reader/writer tasks.
+    /// Opens a port and spawns reader/writer threads.
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
-        ui_tx: mpsc::UnboundedSender<UiEvent>,
-        log_tx: mpsc::UnboundedSender<LoggerEvent>,
+        ui_tx: mpsc::Sender<UiEvent>,
+        log_tx: mpsc::Sender<LoggerEvent>,
     ) -> Result<Self, SerialError> {
-        let port = tokio_serial::new(config.path.to_string_lossy(), config.baud_rate)
-            .open_native_async()?;
+        let mut port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
+            .timeout(Duration::from_millis(10))
+            .open_native()?;
 
-        let (mut reader, mut writer) = tokio::io::split(port);
+        let mut writer_port = port.try_clone_native()?;
 
-        // Spawn reader task
+        // Spawn reader thread
         let reader_name = name.clone();
         let reader_ui_tx = ui_tx.clone();
-        tokio::spawn(async move {
+        std::thread::spawn(move || {
             let mut buf = [0u8; 1024];
             loop {
-                match reader.read(&mut buf).await {
+                match port.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
                         let data = Bytes::copy_from_slice(&buf[..n]);
@@ -61,6 +62,7 @@ impl Port {
                             break; // receiver dropped
                         }
                     }
+                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
                     Err(e) => {
                         let _ = reader_ui_tx.send(UiEvent::ShowNotification(
                             format!("{reader_name}: read error: {e}").into(),
@@ -71,12 +73,12 @@ impl Port {
             }
         });
 
-        // Spawn writer task
-        let (writer_tx, mut writer_rx) = mpsc::channel::<Bytes>(32);
+        // Spawn writer thread
+        let (writer_tx, writer_rx) = mpsc::sync_channel::<Bytes>(32);
         let writer_name = name;
-        tokio::spawn(async move {
-            while let Some(data) = writer_rx.recv().await {
-                if let Err(e) = writer.write_all(&data).await {
+        std::thread::spawn(move || {
+            while let Ok(data) = writer_rx.recv() {
+                if let Err(e) = writer_port.write_all(&data) {
                     let _ = ui_tx.send(UiEvent::ShowNotification(
                         format!("{writer_name}: write error: {e}").into(),
                     ));

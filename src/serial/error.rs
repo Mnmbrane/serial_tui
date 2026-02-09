@@ -1,10 +1,9 @@
 //! Serial-specific error types.
 
-use std::sync::Arc;
+use std::sync::{Arc, mpsc::TrySendError};
 
 use bytes::Bytes;
 use thiserror::Error;
-use tokio::sync::mpsc::error::TrySendError;
 
 #[derive(Debug, Error)]
 pub enum SerialError {

@@ -7,20 +7,18 @@ mod serial;
 mod types;
 mod ui;
 
+use std::sync::mpsc;
+
 use anyhow::Result;
-use tokio::sync::mpsc;
 
 use crate::{logger::Logger, serial::hub::SerialHub, ui::Ui};
 
 fn main() -> Result<()> {
-    let rt = tokio::runtime::Runtime::new()?;
-    let _guard = rt.enter();
-
     let config_path = config::ensure_config();
 
     // Create channels
-    let (log_tx, log_rx) = mpsc::unbounded_channel();
-    let (ui_tx, ui_rx) = mpsc::unbounded_channel();
+    let (log_tx, log_rx) = mpsc::channel();
+    let (ui_tx, ui_rx) = mpsc::channel();
 
     // Start serial hub
     let log_tx_ui = log_tx.clone();
@@ -31,7 +29,7 @@ fn main() -> Result<()> {
 
     // Start Logger
     if let Some(logger) = Logger::new(log_rx, ui_tx) {
-        tokio::spawn(logger.run());
+        std::thread::spawn(move || logger.run());
     }
 
     // UI will own the serial hub

@@ -4,10 +4,8 @@ use std::{
     collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{Seek, Write},
-    sync::Arc,
+    sync::{Arc, mpsc},
 };
-
-use tokio::sync::mpsc;
 
 use crate::{serial::PortEvent, ui::UiEvent};
 
@@ -19,8 +17,8 @@ pub enum LoggerEvent {
 
 /// Serial data logger that writes per-port and combined log files.
 pub struct Logger {
-    log_rx: mpsc::UnboundedReceiver<LoggerEvent>,
-    ui_tx: mpsc::UnboundedSender<UiEvent>,
+    log_rx: mpsc::Receiver<LoggerEvent>,
+    ui_tx: mpsc::Sender<UiEvent>,
     super_file: File,
     port_files: HashMap<Arc<str>, File>,
 }
@@ -29,8 +27,8 @@ impl Logger {
     /// Creates a new logger, setting up the logs directory and super.log file.
     /// Returns `None` if setup fails (notifies the UI).
     pub fn new(
-        log_rx: mpsc::UnboundedReceiver<LoggerEvent>,
-        ui_tx: mpsc::UnboundedSender<UiEvent>,
+        log_rx: mpsc::Receiver<LoggerEvent>,
+        ui_tx: mpsc::Sender<UiEvent>,
     ) -> Option<Self> {
         if let Err(e) = fs::create_dir_all("logs") {
             let _ = ui_tx.send(UiEvent::ShowNotification(
@@ -50,8 +48,8 @@ impl Logger {
     }
 
     /// Runs the logger event loop until the channel closes.
-    pub async fn run(mut self) {
-        while let Some(event) = self.log_rx.recv().await {
+    pub fn run(mut self) {
+        while let Ok(event) = self.log_rx.recv() {
             match event {
                 LoggerEvent::Purge => self.purge(),
                 LoggerEvent::SerialData(data) => self.handle_data(&data),
@@ -99,7 +97,7 @@ impl Logger {
         let _ = write!(self.super_file, "[{ts}] [{port}] {text}\n");
     }
 
-    fn open_log(path: &str, ui_tx: &mpsc::UnboundedSender<UiEvent>) -> Option<File> {
+    fn open_log(path: &str, ui_tx: &mpsc::Sender<UiEvent>) -> Option<File> {
         OpenOptions::new()
             .create(true)
             .append(true)
