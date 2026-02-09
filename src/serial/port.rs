@@ -8,7 +8,6 @@ use std::{
 
 use bytes::Bytes;
 use chrono::{DateTime, Local};
-use serialport::SerialPort;
 
 use crate::{config::PortConfig, logger::LoggerEvent, serial::SerialError, ui::UiEvent};
 
