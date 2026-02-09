@@ -15,13 +15,8 @@ use super::focused_block;
 
 /// Actions the config bar can request.
 pub enum ConfigAction {
-    /// Show a notification message
-    #[allow(dead_code)]
-    Notify(String),
     /// Open the port list popup
     OpenPorts,
-    /// Open the add port dialog
-    AddPort,
 }
 
 /// Top bar showing port control keybindings.
@@ -51,7 +46,6 @@ impl ConfigBar {
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<ConfigAction> {
         match key.code {
             KeyCode::Char('p') => Some(ConfigAction::OpenPorts),
-            KeyCode::Char('a') => Some(ConfigAction::AddPort),
             _ => None,
         }
     }

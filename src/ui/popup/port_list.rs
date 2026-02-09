@@ -17,14 +17,6 @@ use crate::config::PortConfig;
 
 use super::{Popup, select_next, select_prev};
 
-/// Actions returned by the port list popup.
-pub enum PortListAction {
-    /// User selected a port by name
-    Select(Arc<str>),
-    /// Popup was closed (Esc pressed)
-    Close,
-}
-
 /// Popup showing list of available COM ports.
 ///
 /// Stateless regarding port data - receives it during render/handle_key
@@ -57,19 +49,6 @@ impl PortListPopup {
         if self.visible {
             self.list_state.select(Some(0));
         }
-    }
-
-    /// Opens the popup and selects the first item.
-    #[allow(dead_code)]
-    pub fn open(&mut self) {
-        self.visible = true;
-        self.list_state.select(Some(0));
-    }
-
-    /// Closes the popup.
-    #[allow(dead_code)]
-    pub fn close(&mut self) {
-        self.visible = false;
     }
 
     /// Renders the port list.
@@ -114,33 +93,12 @@ impl PortListPopup {
     /// - `Up/k` -> Select previous
     /// - `Down/j` -> Select next
     /// - `Enter` -> Select current port
-    pub fn handle_key(
-        &mut self,
-        key: KeyEvent,
-        ports: &[(Arc<str>, Arc<PortConfig>)],
-    ) -> Option<PortListAction> {
+    pub fn handle_key(&mut self, key: KeyEvent, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         match key.code {
-            KeyCode::Esc => {
-                self.visible = false;
-                Some(PortListAction::Close)
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                select_prev(&mut self.list_state, ports.len());
-                None
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                select_next(&mut self.list_state, ports.len());
-                None
-            }
-            KeyCode::Enter => {
-                if let Some(i) = self.list_state.selected() {
-                    if let Some((name, _)) = ports.get(i) {
-                        return Some(PortListAction::Select(name.clone()));
-                    }
-                }
-                None
-            }
-            _ => None,
+            KeyCode::Esc => self.visible = false,
+            KeyCode::Up | KeyCode::Char('k') => select_prev(&mut self.list_state, ports.len()),
+            KeyCode::Down | KeyCode::Char('j') => select_next(&mut self.list_state, ports.len()),
+            _ => {}
         }
     }
 

@@ -26,7 +26,7 @@ use crate::{
     logger::LoggerEvent,
     serial::{PortEvent, hub::SerialHub},
     ui::{
-        HelpPopup, PortListAction, PortListPopup, SendGroupAction, SendGroupPopup, UiEvent,
+        HelpPopup, PortListPopup, SendGroupPopup, UiEvent,
         popup::Notification,
         widgets::{ConfigAction, DisplayAction, InputBarAction},
     },
@@ -233,21 +233,12 @@ impl Ui {
         }
 
         if self.port_list_popup.visible {
-            if let Some(action) = self.port_list_popup.handle_key(key, &ports) {
-                match action {
-                    PortListAction::Select(_name) => {}
-                    PortListAction::Close => {}
-                }
-            }
+            self.port_list_popup.handle_key(key, &ports);
             return;
         }
 
         if self.send_group_popup.visible {
-            if let Some(action) = self.send_group_popup.handle_key(key, &ports) {
-                match action {
-                    SendGroupAction::Close => {}
-                }
-            }
+            self.send_group_popup.handle_key(key, &ports);
             return;
         }
 
@@ -274,8 +265,6 @@ impl Ui {
                 if let Some(action) = self.config_bar.handle_key(key) {
                     match action {
                         ConfigAction::OpenPorts => self.port_list_popup.toggle(),
-                        ConfigAction::AddPort => {}
-                        ConfigAction::Notify(msg) => self.notification_popup.show(msg),
                     }
                 }
             }
@@ -283,7 +272,7 @@ impl Ui {
                 if let Some(action) = self.display.handle_key(key, self.display_height) {
                     match action {
                         DisplayAction::FocusInput => {
-                            self.set_focus(Focus::InputBar);
+                            self.focus = Focus::InputBar;
                         }
                         DisplayAction::Notify(msg) => {
                             self.notification_popup.show(msg);
@@ -328,11 +317,6 @@ impl Ui {
                 }
             }
         }
-    }
-
-    /// Sets focus to the specified widget.
-    fn set_focus(&mut self, focus: Focus) {
-        self.focus = focus;
     }
 
     /// Cycles focus to the next widget in order.

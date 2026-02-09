@@ -13,7 +13,7 @@ mod app;
 mod widgets;
 
 pub use app::Ui;
-pub use popup::{HelpPopup, PortListAction, PortListPopup, SendGroupAction, SendGroupPopup};
+pub use popup::{HelpPopup, PortListPopup, SendGroupPopup};
 
 /// Events sent to the UI from background components.
 pub enum UiEvent {

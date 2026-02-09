@@ -90,11 +90,11 @@ impl Logger {
         }
 
         if let Some(f) = self.port_files.get_mut(port) {
-            let _ = write!(f, "[{ts}] {text}\n");
+            let _ = writeln!(f, "[{ts}] {text}");
         }
 
         // Write to super.log
-        let _ = write!(self.super_file, "[{ts}] [{port}] {text}\n");
+        let _ = writeln!(self.super_file, "[{ts}] [{port}] {text}");
     }
 
     fn open_log(path: &str, ui_tx: &mpsc::Sender<UiEvent>) -> Option<File> {

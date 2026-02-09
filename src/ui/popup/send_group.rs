@@ -17,12 +17,6 @@ use crate::config::PortConfig;
 
 use super::{Popup, select_next, select_prev};
 
-/// Actions returned by the send group popup.
-pub enum SendGroupAction {
-    /// Popup was closed (Esc pressed)
-    Close,
-}
-
 /// Popup for selecting which ports to send data to.
 ///
 /// Maintains a persistent set of selected port names that survives
@@ -59,19 +53,6 @@ impl SendGroupPopup {
         }
     }
 
-    /// Opens the popup and moves cursor to first item.
-    #[allow(dead_code)]
-    pub fn open(&mut self) {
-        self.visible = true;
-        self.list_state.select(Some(0));
-    }
-
-    /// Closes the popup (selection is preserved).
-    #[allow(dead_code)]
-    pub fn close(&mut self) {
-        self.visible = false;
-    }
-
     /// Returns the currently selected port names.
     ///
     /// Used by the input bar to know where to send data.
@@ -84,12 +65,6 @@ impl SendGroupPopup {
         for (name, _) in ports {
             self.selected.insert(name.clone());
         }
-    }
-
-    /// Returns true if the port is in the selection set.
-    #[allow(dead_code)]
-    pub fn is_selected(&self, name: &str) -> bool {
-        self.selected.contains(name)
     }
 
     /// Renders the checkbox list of ports.
@@ -139,29 +114,13 @@ impl SendGroupPopup {
     /// - `Up/k` -> Move cursor up
     /// - `Down/j` -> Move cursor down
     /// - `Space/Enter` -> Toggle current port selection
-    pub fn handle_key(
-        &mut self,
-        key: KeyEvent,
-        ports: &[(Arc<str>, Arc<PortConfig>)],
-    ) -> Option<SendGroupAction> {
+    pub fn handle_key(&mut self, key: KeyEvent, ports: &[(Arc<str>, Arc<PortConfig>)]) {
         match key.code {
-            KeyCode::Esc => {
-                self.visible = false;
-                Some(SendGroupAction::Close)
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                select_prev(&mut self.list_state, ports.len());
-                None
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                select_next(&mut self.list_state, ports.len());
-                None
-            }
-            KeyCode::Char(' ') | KeyCode::Enter => {
-                self.toggle_selected(ports);
-                None
-            }
-            _ => None,
+            KeyCode::Esc => self.visible = false,
+            KeyCode::Up | KeyCode::Char('k') => select_prev(&mut self.list_state, ports.len()),
+            KeyCode::Down | KeyCode::Char('j') => select_next(&mut self.list_state, ports.len()),
+            KeyCode::Char(' ') | KeyCode::Enter => self.toggle_selected(ports),
+            _ => {}
         }
     }
 

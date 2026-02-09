@@ -11,8 +11,8 @@ mod send_group;
 
 pub use help::HelpPopup;
 pub use notification::Notification;
-pub use port_list::{PortListAction, PortListPopup};
-pub use send_group::{SendGroupAction, SendGroupPopup};
+pub use port_list::PortListPopup;
+pub use send_group::SendGroupPopup;
 
 use ratatui::{
     Frame,

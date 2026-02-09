@@ -152,11 +152,6 @@ impl Display {
         }
     }
 
-    /// Returns true if in visual selection mode.
-    pub fn in_visual_mode(&self) -> bool {
-        self.selection_start.is_some()
-    }
-
     /// Returns the selection range as (start, end) inclusive.
     /// Returns None if not in visual mode.
     fn selection_range(&self) -> Option<(usize, usize)> {
@@ -214,11 +209,6 @@ impl Display {
         Ok(num_lines)
     }
 
-    /// Returns true if in search input mode.
-    pub fn in_search_mode(&self) -> bool {
-        self.search_mode
-    }
-
     /// Enters search input mode.
     pub fn start_search(&mut self) {
         self.search_mode = true;
@@ -248,12 +238,6 @@ impl Display {
     /// Removes the last character from the search query.
     pub fn search_pop(&mut self) {
         self.search_query.pop();
-    }
-
-    /// Returns the current search query.
-    #[allow(dead_code)]
-    pub fn search_query(&self) -> &str {
-        &self.search_query
     }
 
     /// Executes the search and populates matches.
@@ -356,9 +340,9 @@ impl Display {
     /// Renders the display with highlighted cursor, selection, and search matches.
     pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
         // Update block title to show mode indicators
-        let title = if self.in_search_mode() {
+        let title = if self.search_mode {
             " Display [SEARCH] ".to_string()
-        } else if self.in_visual_mode() {
+        } else if self.selection_start.is_some() {
             " Display [VISUAL] ".to_string()
         } else if !self.search_matches.is_empty() {
             // Show match count when search is active
@@ -374,7 +358,7 @@ impl Display {
         let inner = block.inner(area);
 
         // Reserve one line for search input when in search mode
-        let content_height = if self.in_search_mode() {
+        let content_height = if self.search_mode {
             inner.height.saturating_sub(1) as usize
         } else {
             inner.height as usize
@@ -413,7 +397,7 @@ impl Display {
         }
 
         // Add search input line when in search mode
-        if self.in_search_mode() {
+        if self.search_mode {
             lines.push(Line::styled(
                 format!("/{}", self.search_query),
                 Style::default().fg(Color::Cyan),
@@ -441,7 +425,7 @@ impl Display {
     /// - `Enter` -> Move focus to input bar (or execute search in search mode)
     pub fn handle_key(&mut self, key: KeyEvent, height: usize) -> Option<DisplayAction> {
         // Handle search mode input
-        if self.in_search_mode() {
+        if self.search_mode {
             match key.code {
                 KeyCode::Esc => {
                     self.cancel_search();
@@ -514,7 +498,7 @@ impl Display {
                 Err(e) => Some(DisplayAction::Notify(format!("Yank failed: {e}"))),
             },
             // Escape exits visual mode (doesn't exit app when in visual)
-            (_, KeyCode::Esc) if self.in_visual_mode() => {
+            (_, KeyCode::Esc) if self.selection_start.is_some() => {
                 self.selection_start = None;
                 None
             }
