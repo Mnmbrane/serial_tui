@@ -184,7 +184,11 @@ impl Ui {
         while let Ok(event) = self.ui_rx.try_recv() {
             match event {
                 UiEvent::PortData(port_event) => {
-                    let PortEvent { port, data, timestamp } = port_event.as_ref();
+                    let PortEvent {
+                        port,
+                        data,
+                        timestamp,
+                    } = port_event.as_ref();
                     let timestamp = timestamp.format("%H:%M:%S%.3f");
                     let text = String::from_utf8_lossy(data);
 
@@ -297,18 +301,8 @@ impl Ui {
                                 if selected.is_empty() {
                                     self.notification_popup.show("No ports selected");
                                 } else {
-                                    let result = if text.is_empty() {
-                                        self.hub.send_line_ending(&selected)
-                                    } else {
-                                        self.hub.send(&selected, Bytes::from(text))
-                                    };
-                                    match result {
-                                        Ok(_) => self
-                                            .notification_popup
-                                            .show(format!("Sent to {} port(s)", selected.len())),
-                                        Err(e) => self
-                                            .notification_popup
-                                            .show(format!("Send failed: {e}")),
+                                    if let Err(e) = self.hub.send(&selected, Bytes::from(text)) {
+                                        self.notification_popup.show(format!("Send failed: {e}"));
                                     }
                                 }
                             }

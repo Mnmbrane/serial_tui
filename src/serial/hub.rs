@@ -1,6 +1,11 @@
 //! Central hub for multiple serial port connections.
 
-use std::{collections::HashMap, fs::read_to_string, path::Path, sync::{Arc, mpsc}};
+use std::{
+    collections::HashMap,
+    fs::read_to_string,
+    path::Path,
+    sync::{Arc, mpsc},
+};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
@@ -18,10 +23,7 @@ pub struct SerialHub {
 
 impl SerialHub {
     /// Creates a new hub and returns the event receiver for the port data
-    pub fn new(
-        ui_tx: mpsc::Sender<UiEvent>,
-        log_tx: mpsc::Sender<LoggerEvent>,
-    ) -> Self {
+    pub fn new(ui_tx: mpsc::Sender<UiEvent>, log_tx: mpsc::Sender<LoggerEvent>) -> Self {
         Self {
             ports: HashMap::new(),
             ui_tx,
@@ -72,7 +74,7 @@ impl SerialHub {
             .collect()
     }
 
-    /// Sends data to one or more ports.
+    /// Sends data to one or more ports, appending each port's configured line ending.
     pub fn send(&self, ports: &[Arc<str>], data: Bytes) -> Result<(), SerialError> {
         for name in ports {
             let port = self
@@ -80,21 +82,11 @@ impl SerialHub {
                 .get(name)
                 .ok_or_else(|| SerialError::PortNotFound(name.clone()))?;
 
-            port.writer_tx.try_send(data.clone())?;
-        }
-        Ok(())
-    }
-
-    /// Sends each port's configured line ending.
-    pub fn send_line_ending(&self, ports: &[Arc<str>]) -> Result<(), SerialError> {
-        for name in ports {
-            let port = self
-                .ports
-                .get(name)
-                .ok_or_else(|| SerialError::PortNotFound(name.clone()))?;
-
             let ending = port.config.line_ending.as_bytes();
-            port.writer_tx.try_send(Bytes::from_static(ending))?;
+            let mut buf = Vec::with_capacity(data.len() + ending.len());
+            buf.extend_from_slice(&data);
+            buf.extend_from_slice(ending);
+            port.writer_tx.try_send(Bytes::from(buf))?;
         }
         Ok(())
     }
