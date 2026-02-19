@@ -26,10 +26,7 @@ pub struct Logger {
 impl Logger {
     /// Creates a new logger, setting up the logs directory and super.log file.
     /// Returns `None` if setup fails (notifies the UI).
-    pub fn new(
-        log_rx: mpsc::Receiver<LoggerEvent>,
-        ui_tx: mpsc::Sender<UiEvent>,
-    ) -> Option<Self> {
+    pub fn new(log_rx: mpsc::Receiver<LoggerEvent>, ui_tx: mpsc::Sender<UiEvent>) -> Option<Self> {
         if let Err(e) = fs::create_dir_all("logs") {
             let _ = ui_tx.send(UiEvent::ShowNotification(
                 format!("Logger: failed to create logs/ directory: {e}").into(),
