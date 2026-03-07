@@ -2,7 +2,10 @@
 
 use std::{
     io::{ErrorKind, Read, Write},
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, Sender},
+    },
     time::Duration,
 };
 
@@ -12,6 +15,7 @@ use memchr::{
     memchr,
     memmem::{self},
 };
+use serialport::{Error, TTYPort};
 
 use crate::{
     config::{PortConfig, port::LineEnding},
@@ -41,23 +45,14 @@ impl Port {
             LineEnding::Cr_Lf => memmem::find(buf, b"\r\n"),
         }
     }
-    /// Opens a port and spawns rea der/writer threads.
-    pub fn open(
+
+    fn spawn_reader(
+        mut port: TTYPort,
         name: Arc<str>,
-        config: PortConfig,
-        ui_tx: mpsc::Sender<UiEvent>,
-        log_tx: mpsc::Sender<LoggerEvent>,
-    ) -> Result<Self, SerialError> {
-        let mut port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
-            .timeout(Duration::from_millis(10))
-            .open_native()?;
-
-        let mut writer_port = port.try_clone_native()?;
-
-        // Spawn reader thread
-        let reader_name = name.clone();
-        let reader_ui_tx = ui_tx.clone();
-        let line_ending = config.line_ending;
+        ui_tx: Sender<UiEvent>,
+        log_tx: Sender<LoggerEvent>,
+        line_ending: LineEnding,
+    ) {
         std::thread::spawn(move || {
             let mut tmp_buf = [0; 4096];
             let mut accum = BytesMut::new();
@@ -72,8 +67,8 @@ impl Port {
                         continue;
                     }
                     Err(e) => {
-                        let _ = reader_ui_tx.send(UiEvent::ShowNotification(
-                            format!("{reader_name}: read error: {e}").into(),
+                        let _ = ui_tx.send(UiEvent::ShowNotification(
+                            format!("{name}: read error: {e}").into(),
                         ));
                         break;
                     }
@@ -91,7 +86,7 @@ impl Port {
 
                     // Send data to UI and logger
                     let port_event = PortEvent {
-                        port: reader_name.clone(),
+                        port: name.clone(),
                         data,
                         timestamp: Local::now(),
                     };
@@ -99,26 +94,53 @@ impl Port {
                     let event = Arc::new(port_event);
                     let _ = log_tx.send(LoggerEvent::SerialData(event.clone()));
 
-                    if reader_ui_tx.send(UiEvent::PortData(event)).is_err() {
+                    if ui_tx.send(UiEvent::PortData(event)).is_err() {
                         break; // receiver dropped
                     }
                 }
             }
         });
+    }
 
-        // Spawn writer thread
-        let (writer_tx, writer_rx) = mpsc::sync_channel::<Bytes>(32);
-        let writer_name = name;
+    fn spawn_writer(
+        mut port: TTYPort,
+        name: Arc<str>,
+        writer_rx: Receiver<Bytes>,
+        ui_tx: Sender<UiEvent>,
+    ) {
         std::thread::spawn(move || {
             while let Ok(data) = writer_rx.recv() {
-                if let Err(e) = writer_port.write_all(&data) {
+                if let Err(e) = port.write_all(&data) {
                     let _ = ui_tx.send(UiEvent::ShowNotification(
-                        format!("{writer_name}: write error: {e}").into(),
+                        format!("{name}: write error: {e}").into(),
                     ));
                     break;
                 }
             }
         });
+    }
+    /// Opens a port and spawns rea der/writer threads.
+    pub fn open(
+        name: Arc<str>,
+        config: PortConfig,
+        ui_tx: mpsc::Sender<UiEvent>,
+        log_tx: mpsc::Sender<LoggerEvent>,
+    ) -> Result<Self, SerialError> {
+        let port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
+            .timeout(Duration::from_millis(10))
+            .open_native()?;
+
+        // Spawn reader thread
+        Port::spawn_reader(
+            port.try_clone_native()?,
+            name.clone(),
+            ui_tx.clone(),
+            log_tx.clone(),
+            config.line_ending,
+        );
+
+        let (writer_tx, writer_rx) = mpsc::sync_channel::<Bytes>(32);
+        Port::spawn_writer(port, name, writer_rx, ui_tx);
 
         let config = Arc::new(config);
         Ok(Port { writer_tx, config })
