@@ -22,8 +22,7 @@ fn main() -> Result<()> {
     let (ui_tx, ui_rx) = mpsc::channel();
 
     // Start serial hub
-    let log_tx_ui = log_tx.clone();
-    let mut hub = SerialHub::new(ui_tx.clone(), log_tx);
+    let mut hub = SerialHub::new(ui_tx.clone(), log_tx.clone());
     hub.load_config(config_path).unwrap_or_else(|e| {
         let _ = ui_tx.send(ui::UiEvent::ShowNotification(format!("{e}").into()));
     });
@@ -34,7 +33,7 @@ fn main() -> Result<()> {
     }
 
     // UI will own the serial hub
-    let mut ui = Ui::new(hub, ui_rx, log_tx_ui);
+    let mut ui = Ui::new(hub, ui_rx, log_tx.clone());
     ui.run()?;
 
     Ok(())
