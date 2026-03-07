@@ -10,6 +10,7 @@ arboard = "3"
 bytes = "1"
 chrono = "0.4"
 crossterm = "0.29"
+memchr = "2.8.0"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serialport = { version = "4.8.1", features = ["serde"] }

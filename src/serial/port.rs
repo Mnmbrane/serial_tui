@@ -1,15 +1,24 @@
 //! Single port connection with reader/writer threads.
 
 use std::{
-    io::{Read, Write},
+    io::{ErrorKind, Read, Write},
     sync::{Arc, mpsc},
     time::Duration,
 };
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use chrono::{DateTime, Local};
+use memchr::{
+    memchr,
+    memmem::{self},
+};
 
-use crate::{config::PortConfig, logger::LoggerEvent, serial::SerialError, ui::UiEvent};
+use crate::{
+    config::{PortConfig, port::LineEnding},
+    logger::LoggerEvent,
+    serial::SerialError,
+    ui::UiEvent,
+};
 
 /// Event emitted when a serial port receives data.
 pub struct PortEvent {
@@ -25,7 +34,14 @@ pub struct Port {
 }
 
 impl Port {
-    /// Opens a port and spawns reader/writer threads.
+    fn find_delim(buf: &[u8], le: &LineEnding) -> Option<usize> {
+        match le {
+            LineEnding::Lf => memchr(b'\n', buf),
+            LineEnding::Cr => memchr(b'\r', buf),
+            LineEnding::Cr_Lf => memmem::find(buf, b"\r\n"),
+        }
+    }
+    /// Opens a port and spawns rea der/writer threads.
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
@@ -41,32 +57,50 @@ impl Port {
         // Spawn reader thread
         let reader_name = name.clone();
         let reader_ui_tx = ui_tx.clone();
+        let line_ending = config.line_ending;
         std::thread::spawn(move || {
-            let mut buf = [0u8; 1024];
+            let mut tmp_buf = [0; 4096];
+            let mut accum = BytesMut::new();
             loop {
-                match port.read(&mut buf) {
+                // Read data
+                let read_data_len = match port.read(&mut tmp_buf) {
                     Ok(0) => break,
-                    Ok(n) => {
-                        let data = Bytes::copy_from_slice(&buf[..n]);
-                        let port_event = PortEvent {
-                            port: reader_name.clone(),
-                            data,
-                            timestamp: Local::now(),
-                        };
-
-                        let event = Arc::new(port_event);
-                        let _ = log_tx.send(LoggerEvent::SerialData(event.clone()));
-
-                        if reader_ui_tx.send(UiEvent::PortData(event)).is_err() {
-                            break; // receiver dropped
-                        }
+                    Ok(n) => n,
+                    Err(e)
+                        if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock =>
+                    {
+                        continue;
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
                     Err(e) => {
                         let _ = reader_ui_tx.send(UiEvent::ShowNotification(
                             format!("{reader_name}: read error: {e}").into(),
                         ));
                         break;
+                    }
+                };
+
+                // Add to the accumulator including the line ending
+                accum.extend_from_slice(&tmp_buf[..read_data_len]);
+
+                // Check if accumulator has the line ending
+                while let Some(delim_index) = Port::find_delim(&accum, &line_ending) {
+                    let data = accum.split_to(delim_index + line_ending.len());
+
+                    // only take payload not the line ending
+                    let data = data.freeze();
+
+                    // Send data to UI and logger
+                    let port_event = PortEvent {
+                        port: reader_name.clone(),
+                        data,
+                        timestamp: Local::now(),
+                    };
+
+                    let event = Arc::new(port_event);
+                    let _ = log_tx.send(LoggerEvent::SerialData(event.clone()));
+
+                    if reader_ui_tx.send(UiEvent::PortData(event)).is_err() {
+                        break; // receiver dropped
                     }
                 }
             }

@@ -12,21 +12,25 @@ use crate::{error::ConfigError, types::color::Color};
 pub enum LineEnding {
     /// Line Feed (`\n`)
     #[default]
-    LF,
+    Lf,
     /// Carriage Return (`\r`)
-    CR,
+    Cr,
     /// Carriage Return + Line Feed (`\r\n`)
-    CRLF,
+    Cr_Lf,
 }
 
 impl LineEnding {
     /// Returns the byte representation of this line ending.
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
-            LineEnding::LF => b"\n",
-            LineEnding::CR => b"\r",
-            LineEnding::CRLF => b"\r\n",
+            LineEnding::Lf => b"\n",
+            LineEnding::Cr => b"\r",
+            LineEnding::Cr_Lf => b"\r\n",
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.as_bytes().len()
     }
 }
 
@@ -35,9 +39,9 @@ impl std::str::FromStr for LineEnding {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "lf" | "\n" => Ok(LineEnding::LF),
-            "cr" | "\r" => Ok(LineEnding::CR),
-            "crlf" | "\r\n" => Ok(LineEnding::CRLF),
+            "lf" | "\n" => Ok(LineEnding::Lf),
+            "cr" | "\r" => Ok(LineEnding::Cr),
+            "crlf" | "\r\n" => Ok(LineEnding::Cr_Lf),
             other => Err(ConfigError::InvalidLineEnding(other.into())),
         }
     }
@@ -80,7 +84,7 @@ mod tests {
             PortConfig {
                 path: PathBuf::new(),
                 baud_rate: 115_200,
-                line_ending: LineEnding::LF,
+                line_ending: LineEnding::Lf,
                 color: Color(RatatuiColor::Reset),
             }
         );
@@ -90,8 +94,8 @@ mod tests {
     fn test_modify() {
         let mut port_config = PortConfig::default();
         port_config.baud_rate = 9600;
-        port_config.line_ending = LineEnding::CRLF;
+        port_config.line_ending = LineEnding::Cr_Lf;
         assert_eq!(port_config.baud_rate, 9600);
-        assert_eq!(port_config.line_ending, LineEnding::CRLF);
+        assert_eq!(port_config.line_ending, LineEnding::Cr_Lf);
     }
 }
