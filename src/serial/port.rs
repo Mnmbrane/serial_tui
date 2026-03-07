@@ -1,7 +1,7 @@
 //! Single port connection with reader/writer threads.
 
 use std::{
-    io::{ErrorKind, Read, Write},
+    io::{Read, Write},
     sync::{
         Arc,
         mpsc::{self, Receiver, Sender},
@@ -15,7 +15,7 @@ use memchr::{
     memchr,
     memmem::{self},
 };
-use serialport::TTYPort;
+use serialport::SerialPort;
 
 use crate::{
     config::{PortConfig, port::LineEnding},
@@ -47,7 +47,7 @@ impl Port {
     }
 
     fn spawn_reader(
-        mut port: TTYPort,
+        mut port: Box<dyn SerialPort>,
         name: Arc<str>,
         ui_tx: Sender<UiEvent>,
         log_tx: Sender<LoggerEvent>,
@@ -62,7 +62,8 @@ impl Port {
                     Ok(0) => break,
                     Ok(n) => n,
                     Err(e)
-                        if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock =>
+                        if e.kind() == std::io::ErrorKind::TimedOut
+                            || e.kind() == std::io::ErrorKind::WouldBlock =>
                     {
                         continue;
                     }
@@ -103,7 +104,7 @@ impl Port {
     }
 
     fn spawn_writer(
-        mut port: TTYPort,
+        mut port: Box<dyn SerialPort>,
         name: Arc<str>,
         writer_rx: Receiver<Bytes>,
         ui_tx: Sender<UiEvent>,
@@ -128,11 +129,11 @@ impl Port {
     ) -> Result<Self, SerialError> {
         let port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
             .timeout(Duration::from_millis(10))
-            .open_native()?;
+            .open()?;
 
         // Spawn reader thread
         Port::spawn_reader(
-            port.try_clone_native()?,
+            port.try_clone()?,
             name.clone(),
             ui_tx.clone(),
             log_tx.clone(),
