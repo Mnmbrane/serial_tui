@@ -15,7 +15,7 @@ use memchr::{
     memchr,
     memmem::{self},
 };
-use serialport::{Error, TTYPort};
+use serialport::TTYPort;
 
 use crate::{
     config::{PortConfig, port::LineEnding},
@@ -123,8 +123,8 @@ impl Port {
     pub fn open(
         name: Arc<str>,
         config: PortConfig,
-        ui_tx: mpsc::Sender<UiEvent>,
-        log_tx: mpsc::Sender<LoggerEvent>,
+        ui_tx: Sender<UiEvent>,
+        log_tx: Sender<LoggerEvent>,
     ) -> Result<Self, SerialError> {
         let port = serialport::new(config.path.to_string_lossy(), config.baud_rate)
             .timeout(Duration::from_millis(10))
@@ -142,7 +142,9 @@ impl Port {
         let (writer_tx, writer_rx) = mpsc::sync_channel::<Bytes>(32);
         Port::spawn_writer(port, name, writer_rx, ui_tx);
 
-        let config = Arc::new(config);
-        Ok(Port { writer_tx, config })
+        Ok(Port {
+            writer_tx,
+            config: Arc::new(config),
+        })
     }
 }
