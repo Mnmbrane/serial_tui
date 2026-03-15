@@ -30,7 +30,6 @@ impl ConfigBar {
         let block = focused_block(" Config ", focused);
 
         let content = Line::from(vec![
-            Span::styled("Select ", Style::default().fg(Color::Cyan)),
             Span::styled("P", Style::default().fg(Color::Yellow)),
             Span::styled("orts ", Style::default().fg(Color::Cyan)),
         ]);

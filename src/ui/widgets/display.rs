@@ -14,10 +14,16 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::Paragraph,
+    widgets::{Paragraph, ScrollbarState},
 };
 
 use super::focused_block;
+
+enum DisplayMode {
+    Normal, // Able to navigate the display
+    Visual, // Able to highlight
+    Search, // Able to search display from beginning
+}
 
 /// Actions the display widget can request.
 pub enum DisplayAction {
@@ -32,6 +38,8 @@ pub enum DisplayAction {
 /// Uses a VecDeque as a circular buffer for efficient push/pop.
 /// Cursor-based scrolling with 25% margin triggers auto-scroll.
 pub struct Display {
+    // Mode that display is in (normal, visual, display)
+    mode: DisplayMode,
     /// Circular buffer of pre-rendered display lines (max 10,000)
     lines: VecDeque<Line<'static>>,
     /// Current cursor position (absolute index in buffer)
@@ -42,8 +50,10 @@ pub struct Display {
     pending_g: bool,
     /// Visual selection start (None = not in visual mode)
     selection_start: Option<usize>,
-    /// Whether we're in search input mode
+
+    /// TODO: Delete this and refactor to using DisplayMode
     search_mode: bool,
+
     /// Current search query
     search_query: String,
     /// Sorted indices of lines matching the search
@@ -63,12 +73,12 @@ impl Display {
     /// Creates a new empty display.
     pub fn new() -> Self {
         Self {
+            mode: DisplayMode::Normal,
             lines: VecDeque::new(),
             cursor: 0,
             view_start: 0,
             pending_g: false,
             selection_start: None,
-            search_mode: false,
             search_query: String::new(),
             search_matches: Vec::new(),
             search_match_idx: 0,
@@ -93,6 +103,7 @@ impl Display {
             // Adjust view if it was pointing at removed line
             self.view_start = self.view_start.saturating_sub(1);
         }
+
         self.lines.push_back(line);
         // Auto-scroll: move cursor to the last line
         self.cursor = self.lines.len().saturating_sub(1);

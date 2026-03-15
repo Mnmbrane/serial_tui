@@ -21,3 +21,8 @@
 path = "/tmp/ttyACM0"
 baud_rate = 115200
 color = "green"
+
+[example_com]
+path = "/tmp/ttyACM1"
+baud_rate = 115200
+color = "red"
