@@ -14,15 +14,33 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::Line,
-    widgets::{Paragraph, ScrollbarState},
+    widgets::Paragraph,
 };
 
 use super::focused_block;
 
+/// Mutually exclusive interaction modes for the display widget.
 enum DisplayMode {
-    Normal, // Able to navigate the display
-    Visual, // Able to highlight
-    Search, // Able to search display from beginning
+    /// Normal navigation mode.
+    Normal,
+    /// Visual line-selection mode.
+    Visual {
+        /// Anchor line index where the visual selection started.
+        selection_start: usize,
+    },
+    /// Search input mode (`/` prompt is active).
+    Search {
+        /// In-progress query typed after `/`.
+        search_query: String,
+    },
+}
+
+/// Search results from the last executed query.
+struct SearchState {
+    /// Cached line indices that match the last completed search.
+    matches: Vec<usize>,
+    /// Current index within `matches` for n/N navigation.
+    match_idx: usize,
 }
 
 /// Actions the display widget can request.
@@ -38,8 +56,10 @@ pub enum DisplayAction {
 /// Uses a VecDeque as a circular buffer for efficient push/pop.
 /// Cursor-based scrolling with 25% margin triggers auto-scroll.
 pub struct Display {
-    // Mode that display is in (normal, visual, display)
+    /// Mode that display is currently in.
     mode: DisplayMode,
+    /// Search result cache used by normal/visual mode.
+    search: SearchState,
     /// Circular buffer of pre-rendered display lines (max 10,000)
     lines: VecDeque<Line<'static>>,
     /// Current cursor position (absolute index in buffer)
@@ -48,18 +68,6 @@ pub struct Display {
     view_start: usize,
     /// Tracks if 'g' was pressed (for gg sequence)
     pending_g: bool,
-    /// Visual selection start (None = not in visual mode)
-    selection_start: Option<usize>,
-
-    /// TODO: Delete this and refactor to using DisplayMode
-    search_mode: bool,
-
-    /// Current search query
-    search_query: String,
-    /// Sorted indices of lines matching the search
-    search_matches: Vec<usize>,
-    /// Current match index (for n/N navigation)
-    search_match_idx: usize,
     /// Clipboard instance kept alive for Linux compatibility
     clipboard: Option<arboard::Clipboard>,
 }
@@ -74,14 +82,14 @@ impl Display {
     pub fn new() -> Self {
         Self {
             mode: DisplayMode::Normal,
+            search: SearchState {
+                matches: Vec::new(),
+                match_idx: 0,
+            },
             lines: VecDeque::new(),
             cursor: 0,
             view_start: 0,
             pending_g: false,
-            selection_start: None,
-            search_query: String::new(),
-            search_matches: Vec::new(),
-            search_match_idx: 0,
             clipboard: None,
         }
     }
@@ -91,8 +99,10 @@ impl Display {
         self.lines.clear();
         self.cursor = 0;
         self.view_start = 0;
-        self.selection_start = None;
-        self.search_matches.clear();
+        self.pending_g = false;
+        self.mode = DisplayMode::Normal;
+        self.search.matches.clear();
+        self.search.match_idx = 0;
     }
 
     /// Adds a pre-styled line to the buffer, removing oldest if at capacity.
@@ -109,46 +119,9 @@ impl Display {
         self.cursor = self.lines.len().saturating_sub(1);
     }
 
-    /// Moves cursor up one line.
-    pub fn move_up(&mut self, height: usize) {
-        if self.cursor > 0 {
-            self.cursor -= 1;
-            self.adjust_scroll(height);
-        }
-    }
-
-    /// Moves cursor down one line.
-    pub fn move_down(&mut self, height: usize) {
-        if self.cursor < self.lines.len().saturating_sub(1) {
-            self.cursor += 1;
-            self.adjust_scroll(height);
-        }
-    }
-
-    /// Moves cursor up half a page (Ctrl+u).
-    pub fn half_page_up(&mut self, height: usize) {
-        let half = height / 2;
-        self.cursor = self.cursor.saturating_sub(half);
-        self.adjust_scroll(height);
-    }
-
-    /// Moves cursor down half a page (Ctrl+d).
-    pub fn half_page_down(&mut self, height: usize) {
-        let half = height / 2;
-        let max_cursor = self.lines.len().saturating_sub(1);
-        self.cursor = (self.cursor + half).min(max_cursor);
-        self.adjust_scroll(height);
-    }
-
     /// Moves cursor to the first line (gg).
     pub fn go_to_top(&mut self, height: usize) {
         self.cursor = 0;
-        self.adjust_scroll(height);
-    }
-
-    /// Moves cursor to the last line (G).
-    pub fn go_to_bottom(&mut self, height: usize) {
-        self.cursor = self.lines.len().saturating_sub(1);
         self.adjust_scroll(height);
     }
 
@@ -156,20 +129,29 @@ impl Display {
     /// If not in visual mode, starts selection at cursor.
     /// If in visual mode, exits visual mode.
     pub fn toggle_visual(&mut self) {
-        if self.selection_start.is_some() {
-            self.selection_start = None;
-        } else {
-            self.selection_start = Some(self.cursor);
+        match self.mode {
+            DisplayMode::Normal => {
+                self.mode = DisplayMode::Visual {
+                    selection_start: self.cursor,
+                };
+            }
+            DisplayMode::Visual { .. } => {
+                self.mode = DisplayMode::Normal;
+            }
+            DisplayMode::Search { .. } => {}
         }
     }
 
     /// Returns the selection range as (start, end) inclusive.
     /// Returns None if not in visual mode.
     fn selection_range(&self) -> Option<(usize, usize)> {
-        self.selection_start.map(|start| {
-            let (a, b) = (start, self.cursor);
-            (a.min(b), a.max(b))
-        })
+        match self.mode {
+            DisplayMode::Visual { selection_start } => {
+                let (a, b) = (selection_start, self.cursor);
+                Some((a.min(b), a.max(b)))
+            }
+            _ => None,
+        }
     }
 
     /// Returns true if the given line index is within the selection.
@@ -216,100 +198,96 @@ impl Display {
         }
 
         // Exit visual mode after yank
-        self.selection_start = None;
-        Ok(num_lines)
-    }
+        if matches!(self.mode, DisplayMode::Visual { .. }) {
+            self.mode = DisplayMode::Normal;
+        }
 
-    /// Enters search input mode.
-    pub fn start_search(&mut self) {
-        self.search_mode = true;
-        self.search_query.clear();
-        self.search_matches.clear();
-        self.search_match_idx = 0;
+        Ok(num_lines)
     }
 
     /// Exits search input mode and executes the search.
     pub fn finish_search(&mut self, height: usize) {
-        self.search_mode = false;
-        self.execute_search(height);
-    }
-
-    /// Cancels search mode without executing.
-    pub fn cancel_search(&mut self) {
-        self.search_mode = false;
-        self.search_query.clear();
-        self.search_matches.clear();
-    }
-
-    /// Adds a character to the search query.
-    pub fn search_push(&mut self, c: char) {
-        self.search_query.push(c);
-    }
-
-    /// Removes the last character from the search query.
-    pub fn search_pop(&mut self) {
-        self.search_query.pop();
-    }
-
-    /// Executes the search and populates matches.
-    fn execute_search(&mut self, height: usize) {
-        self.search_matches.clear();
-        self.search_match_idx = 0;
-
-        if self.search_query.is_empty() {
+        let DisplayMode::Search { search_query } =
+            std::mem::replace(&mut self.mode, DisplayMode::Normal)
+        else {
             return;
-        }
+        };
 
-        let query_lower = self.search_query.to_lowercase();
+        self.search.matches.clear();
+        self.search.match_idx = 0;
 
-        for (idx, line) in self.lines.iter().enumerate() {
-            let text: String = line
-                .spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect();
+        if !search_query.is_empty() {
+            let query_lower = search_query.to_lowercase();
 
-            if text.to_lowercase().contains(&query_lower) {
-                self.search_matches.push(idx);
+            for (idx, line) in self.lines.iter().enumerate() {
+                let text: String = line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect();
+
+                if text.to_lowercase().contains(&query_lower) {
+                    self.search.matches.push(idx);
+                }
             }
         }
 
-        // Jump to first match if any
-        if let Some(&first) = self.search_matches.first() {
+        if let Some(&first) = self.search.matches.first() {
             self.cursor = first;
             self.adjust_scroll(height);
         }
     }
 
+    /// Cancels search mode without executing.
+    pub fn cancel_search(&mut self) {
+        if matches!(self.mode, DisplayMode::Search { .. }) {
+            self.mode = DisplayMode::Normal;
+        }
+    }
+
+    /// Adds a character to the search query.
+    pub fn search_push(&mut self, c: char) {
+        if let DisplayMode::Search { search_query } = &mut self.mode {
+            search_query.push(c);
+        }
+    }
+
+    /// Removes the last character from the search query.
+    pub fn search_pop(&mut self) {
+        if let DisplayMode::Search { search_query } = &mut self.mode {
+            search_query.pop();
+        }
+    }
+
     /// Jumps to the next search match.
     pub fn next_match(&mut self, height: usize) {
-        if self.search_matches.is_empty() {
+        if self.search.matches.is_empty() {
             return;
         }
 
-        self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
-        self.cursor = self.search_matches[self.search_match_idx];
+        self.search.match_idx = (self.search.match_idx + 1) % self.search.matches.len();
+        self.cursor = self.search.matches[self.search.match_idx];
         self.adjust_scroll(height);
     }
 
     /// Jumps to the previous search match.
     pub fn prev_match(&mut self, height: usize) {
-        if self.search_matches.is_empty() {
+        if self.search.matches.is_empty() {
             return;
         }
 
-        self.search_match_idx = if self.search_match_idx == 0 {
-            self.search_matches.len() - 1
+        self.search.match_idx = if self.search.match_idx == 0 {
+            self.search.matches.len() - 1
         } else {
-            self.search_match_idx - 1
+            self.search.match_idx - 1
         };
-        self.cursor = self.search_matches[self.search_match_idx];
+        self.cursor = self.search.matches[self.search.match_idx];
         self.adjust_scroll(height);
     }
 
     /// Returns true if the given line index is a search match.
     fn is_match(&self, idx: usize) -> bool {
-        self.search_matches.binary_search(&idx).is_ok()
+        self.search.matches.binary_search(&idx).is_ok()
     }
 
     /// Adjusts view_start to keep cursor within scroll margins.
@@ -321,12 +299,12 @@ impl Display {
         let margin = (height as f32 * Self::SCROLL_MARGIN) as usize;
         let cursor_in_view = self.cursor.saturating_sub(self.view_start);
 
-        // Cursor in top 25% → scroll up
+        // Cursor in top 25% -> scroll up
         if cursor_in_view < margin {
             self.view_start = self.cursor.saturating_sub(margin);
         }
 
-        // Cursor in bottom 25% → scroll down
+        // Cursor in bottom 25% -> scroll down
         if cursor_in_view >= height.saturating_sub(margin) {
             self.view_start = self
                 .cursor
@@ -351,25 +329,24 @@ impl Display {
     /// Renders the display with highlighted cursor, selection, and search matches.
     pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
         // Update block title to show mode indicators
-        let title = if self.search_mode {
-            " Display [SEARCH] ".to_string()
-        } else if self.selection_start.is_some() {
-            " Display [VISUAL] ".to_string()
-        } else if !self.search_matches.is_empty() {
-            // Show match count when search is active
-            format!(
-                " Display [{}/{}] ",
-                self.search_match_idx + 1,
-                self.search_matches.len()
-            )
-        } else {
-            " Display ".to_string()
+        let title = match self.mode {
+            DisplayMode::Search { .. } => " Display [SEARCH] ".to_string(),
+            DisplayMode::Visual { .. } => " Display [VISUAL] ".to_string(),
+            DisplayMode::Normal if !self.search.matches.is_empty() => {
+                format!(
+                    " Display [{}/{}] ",
+                    self.search.match_idx + 1,
+                    self.search.matches.len()
+                )
+            }
+            DisplayMode::Normal => " Display ".to_string(),
         };
+
         let block = focused_block(&title, focused);
         let inner = block.inner(area);
 
         // Reserve one line for search input when in search mode
-        let content_height = if self.search_mode {
+        let content_height = if matches!(self.mode, DisplayMode::Search { .. }) {
             inner.height.saturating_sub(1) as usize
         } else {
             inner.height as usize
@@ -408,9 +385,9 @@ impl Display {
         }
 
         // Add search input line when in search mode
-        if self.search_mode {
+        if let DisplayMode::Search { search_query } = &self.mode {
             lines.push(Line::styled(
-                format!("/{}", self.search_query),
+                format!("/{search_query}"),
                 Style::default().fg(Color::Cyan),
             ));
         }
@@ -436,7 +413,7 @@ impl Display {
     /// - `Enter` -> Move focus to input bar (or execute search in search mode)
     pub fn handle_key(&mut self, key: KeyEvent, height: usize) -> Option<DisplayAction> {
         // Handle search mode input
-        if self.search_mode {
+        if matches!(self.mode, DisplayMode::Search { .. }) {
             match key.code {
                 KeyCode::Esc => {
                     self.cancel_search();
@@ -459,19 +436,27 @@ impl Display {
         if self.pending_g {
             self.pending_g = false;
             if key.code == KeyCode::Char('g') {
-                self.go_to_top(height);
+                self.cursor = 0;
+                self.adjust_scroll(height);
                 return None;
             }
             // If not 'g', fall through to normal handling
         }
 
         match (key.modifiers, key.code) {
+            // Go half way up the page
             (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
-                self.half_page_up(height);
+                let half = height / 2;
+                self.cursor = self.cursor.saturating_sub(half);
+                self.adjust_scroll(height);
                 None
             }
+            // Go half way down the page
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-                self.half_page_down(height);
+                let half = height / 2;
+                let max_cursor = self.lines.len().saturating_sub(1);
+                self.cursor = (self.cursor + half).min(max_cursor);
+                self.adjust_scroll(height);
                 None
             }
             (_, KeyCode::Char('g')) => {
@@ -479,13 +464,18 @@ impl Display {
                 self.pending_g = true;
                 None
             }
+            // Go to bottom
             (KeyModifiers::SHIFT, KeyCode::Char('G')) => {
-                self.go_to_bottom(height);
+                self.cursor = self.lines.len().saturating_sub(1);
+                self.adjust_scroll(height);
                 None
             }
             // Start search mode
             (_, KeyCode::Char('/')) => {
-                self.start_search();
+                self.mode = DisplayMode::Search {
+                    search_query: String::new(),
+                };
+                self.pending_g = false;
                 None
             }
             // Next search match
@@ -509,16 +499,24 @@ impl Display {
                 Err(e) => Some(DisplayAction::Notify(format!("Yank failed: {e}"))),
             },
             // Escape exits visual mode (doesn't exit app when in visual)
-            (_, KeyCode::Esc) if self.selection_start.is_some() => {
-                self.selection_start = None;
+            (_, KeyCode::Esc) => {
+                if matches!(self.mode, DisplayMode::Visual { .. }) {
+                    self.mode = DisplayMode::Normal;
+                }
                 None
             }
             (_, KeyCode::Char('k') | KeyCode::Up) => {
-                self.move_up(height);
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                    self.adjust_scroll(height);
+                }
                 None
             }
             (_, KeyCode::Char('j') | KeyCode::Down) => {
-                self.move_down(height);
+                if self.cursor < self.lines.len().saturating_sub(1) {
+                    self.cursor += 1;
+                    self.adjust_scroll(height);
+                }
                 None
             }
             (_, KeyCode::Enter) => Some(DisplayAction::FocusInput),
