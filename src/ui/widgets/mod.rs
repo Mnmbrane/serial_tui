@@ -23,7 +23,7 @@ use ratatui::{
 ///
 /// When focused, the border is highlighted in yellow.
 /// Used by all main widgets for consistent styling.
-pub fn focused_block(title: &str, focused: bool) -> Block {
+pub fn focused_block(title: &str, focused: bool) -> Block<'_> {
     let style = if focused {
         Style::default().fg(Color::Yellow)
     } else {

@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use crate::serial::PortEvent;
 
-mod popup;
 mod app;
+mod popup;
 mod widgets;
 
 pub use app::Ui;

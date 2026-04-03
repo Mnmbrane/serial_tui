@@ -42,7 +42,7 @@ impl Port {
         match le {
             LineEnding::Lf => memchr(b'\n', buf),
             LineEnding::Cr => memchr(b'\r', buf),
-            LineEnding::Cr_Lf => memmem::find(buf, b"\r\n"),
+            LineEnding::CrLf => memmem::find(buf, b"\r\n"),
         }
     }
 

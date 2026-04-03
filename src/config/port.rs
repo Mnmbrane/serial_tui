@@ -16,7 +16,7 @@ pub enum LineEnding {
     /// Carriage Return (`\r`)
     Cr,
     /// Carriage Return + Line Feed (`\r\n`)
-    Cr_Lf,
+    CrLf,
 }
 
 impl LineEnding {
@@ -25,7 +25,7 @@ impl LineEnding {
         match self {
             LineEnding::Lf => b"\n",
             LineEnding::Cr => b"\r",
-            LineEnding::Cr_Lf => b"\r\n",
+            LineEnding::CrLf => b"\r\n",
         }
     }
 
@@ -41,7 +41,7 @@ impl std::str::FromStr for LineEnding {
         match s.to_lowercase().as_str() {
             "lf" | "\n" => Ok(LineEnding::Lf),
             "cr" | "\r" => Ok(LineEnding::Cr),
-            "crlf" | "\r\n" => Ok(LineEnding::Cr_Lf),
+            "crlf" | "\r\n" => Ok(LineEnding::CrLf),
             other => Err(ConfigError::InvalidLineEnding(other.into())),
         }
     }
@@ -94,8 +94,8 @@ mod tests {
     fn test_modify() {
         let mut port_config = PortConfig::default();
         port_config.baud_rate = 9600;
-        port_config.line_ending = LineEnding::Cr_Lf;
+        port_config.line_ending = LineEnding::CrLf;
         assert_eq!(port_config.baud_rate, 9600);
-        assert_eq!(port_config.line_ending, LineEnding::Cr_Lf);
+        assert_eq!(port_config.line_ending, LineEnding::CrLf);
     }
 }

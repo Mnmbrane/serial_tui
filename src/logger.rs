@@ -15,7 +15,7 @@ pub enum LoggerEvent {
     Purge,
 }
 
-/// Serial data logger that writes per-port and combined log files.
+/// Serial TUI logger that writes per-port and combined log files.
 pub struct Logger {
     log_rx: mpsc::Receiver<LoggerEvent>,
     ui_tx: mpsc::Sender<UiEvent>,

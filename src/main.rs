@@ -3,7 +3,6 @@
 mod config;
 mod error;
 mod logger;
-mod notify;
 mod serial;
 mod types;
 mod ui;
@@ -18,6 +17,7 @@ fn main() -> Result<()> {
     let config_path = config::ensure_config();
 
     // Create channels
+
     let (log_tx, log_rx) = mpsc::channel();
     let (ui_tx, ui_rx) = mpsc::channel();
 

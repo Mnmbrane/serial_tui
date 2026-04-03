@@ -119,12 +119,6 @@ impl Display {
         self.cursor = self.lines.len().saturating_sub(1);
     }
 
-    /// Moves cursor to the first line (gg).
-    pub fn go_to_top(&mut self, height: usize) {
-        self.cursor = 0;
-        self.adjust_scroll(height);
-    }
-
     /// Toggles visual selection mode.
     /// If not in visual mode, starts selection at cursor.
     /// If in visual mode, exits visual mode.
@@ -432,17 +426,6 @@ impl Display {
             return None;
         }
 
-        // Handle 'gg' sequence
-        if self.pending_g {
-            self.pending_g = false;
-            if key.code == KeyCode::Char('g') {
-                self.cursor = 0;
-                self.adjust_scroll(height);
-                return None;
-            }
-            // If not 'g', fall through to normal handling
-        }
-
         match (key.modifiers, key.code) {
             // Go half way up the page
             (KeyModifiers::CONTROL, KeyCode::Char('u')) => {
@@ -460,8 +443,14 @@ impl Display {
                 None
             }
             (_, KeyCode::Char('g')) => {
-                // First 'g' - wait for second
-                self.pending_g = true;
+                if self.pending_g == true {
+                    self.pending_g = false;
+                    self.cursor = 0;
+                    self.adjust_scroll(height);
+                } else {
+                    // First 'g' - wait for second
+                    self.pending_g = true;
+                }
                 None
             }
             // Go to bottom
